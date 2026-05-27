@@ -54,7 +54,10 @@ import {
   MoreVertical,
   Shield,
   Clock,
+  Sparkles,
+  Captions,
 } from "lucide-react";
+import { Track } from "livekit-client";
 
 export default function RoomPage() {
   const params = useParams<{ roomId: string }>();
@@ -1035,6 +1038,8 @@ function InCallView({
         <HandRaiseSystem setRaisedHands={setRaisedHands} />
         <HandRaiseOverlay raisedHands={raisedHands} />
         <ForceMuteListener />
+        <BackgroundBlurButton />
+        <LiveCaptions />
         <ParticipantsPanel
           open={panelOpen}
           onClose={() => setPanelOpen(false)}
@@ -1455,5 +1460,265 @@ function HandRaiseOverlay({ raisedHands }: { raisedHands: Set<string> }) {
   }, [raisedHands, participants]);
 
   return null;
+}
+
+/* ---------- Background Blur toggle (MediaPipe via @livekit/track-processors) ---------- */
+
+function BackgroundBlurButton() {
+  const { localParticipant } = useLocalParticipant();
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function enable() {
+    if (!localParticipant) return;
+    const cam = localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = cam?.videoTrack;
+    if (!track) return;
+    setLoading(true);
+    try {
+      const mod = await import("@livekit/track-processors");
+      await track.setProcessor(mod.BackgroundBlur(10));
+      setEnabled(true);
+      localStorage.setItem("pulse-blur", "1");
+    } catch (e) {
+      console.error("Background blur failed", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function disable() {
+    if (!localParticipant) return;
+    const cam = localParticipant.getTrackPublication(Track.Source.Camera);
+    const track = cam?.videoTrack;
+    if (!track) return;
+    setLoading(true);
+    try {
+      await track.stopProcessor();
+      setEnabled(false);
+      localStorage.removeItem("pulse-blur");
+    } catch (e) {
+      console.error("Stop blur failed", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Restore saved preference once participant is ready
+  useEffect(() => {
+    const saved = localStorage.getItem("pulse-blur") === "1";
+    if (saved && localParticipant && !enabled) {
+      enable().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localParticipant]);
+
+  return (
+    <button
+      onClick={() => (enabled ? disable() : enable())}
+      disabled={loading}
+      className={
+        "fixed bottom-20 right-20 z-40 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md border border-white/15 shadow-soft transition disabled:opacity-50 " +
+        (enabled
+          ? "bg-brand-grad text-white"
+          : "bg-white/10 hover:bg-white/20 text-white")
+      }
+      title={enabled ? "Disable background blur" : "Enable background blur"}
+      aria-label="Background blur"
+    >
+      <Sparkles className="w-5 h-5" />
+    </button>
+  );
+}
+
+/* ---------- Live Captions (Web Speech API + data channel broadcast) ---------- */
+
+type CaptionMsg = {
+  identity: string;
+  name: string;
+  text: string;
+  final: boolean;
+  ts: number;
+};
+
+function LiveCaptions() {
+  const { localParticipant } = useLocalParticipant();
+  const [enabled, setEnabled] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [captions, setCaptions] = useState<CaptionMsg[]>([]);
+  const recRef = useRef<{ stop: () => void } | null>(null);
+  const { send, message } = useDataChannel("pulse-caption");
+
+  useEffect(() => {
+    const SR =
+      (window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: unknown })
+        .webkitSpeechRecognition;
+    if (!SR) setSupported(false);
+  }, []);
+
+  // Auto-cleanup old captions
+  useEffect(() => {
+    if (captions.length === 0) return;
+    const id = setInterval(() => {
+      setCaptions((prev) => prev.filter((c) => Date.now() - c.ts < 5000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [captions.length]);
+
+  // Receive captions from others
+  useEffect(() => {
+    if (!message) return;
+    try {
+      const text = new TextDecoder().decode(message.payload);
+      const data = JSON.parse(text) as { text?: string; final?: boolean };
+      if (!data?.text || !message.from?.identity) return;
+      const cap: CaptionMsg = {
+        identity: message.from.identity,
+        name: cleanName(message.from.name || message.from.identity),
+        text: data.text,
+        final: !!data.final,
+        ts: Date.now(),
+      };
+      setCaptions((prev) => {
+        const filtered = prev.filter(
+          (c) => c.identity !== cap.identity || c.final
+        );
+        return [...filtered, cap].slice(-6);
+      });
+    } catch {}
+  }, [message]);
+
+  function broadcastCaption(text: string, final: boolean) {
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ text, final }));
+      send(payload, { reliable: false });
+    } catch {}
+  }
+
+  function start() {
+    const SRClass = (window as unknown as {
+      SpeechRecognition?: new () => unknown;
+      webkitSpeechRecognition?: new () => unknown;
+    }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => unknown })
+        .webkitSpeechRecognition;
+    if (!SRClass || !localParticipant) return;
+    type RecResult = {
+      [k: number]: { transcript: string };
+      isFinal: boolean;
+    };
+    type SR = {
+      continuous: boolean;
+      interimResults: boolean;
+      lang: string;
+      onresult: (e: {
+        resultIndex: number;
+        results: { [k: number]: RecResult; length: number };
+      }) => void;
+      onerror: (e: unknown) => void;
+      onend: () => void;
+      start: () => void;
+      stop: () => void;
+    };
+    const rec = new SRClass() as SR;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "id-ID";
+    rec.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        const transcript = res[0].transcript;
+        broadcastCaption(transcript, !!res.isFinal);
+        setCaptions((prev) => {
+          const cap: CaptionMsg = {
+            identity: localParticipant.identity,
+            name: cleanName(localParticipant.name || localParticipant.identity),
+            text: transcript,
+            final: !!res.isFinal,
+            ts: Date.now(),
+          };
+          const filtered = prev.filter(
+            (c) => c.identity !== cap.identity || c.final
+          );
+          return [...filtered, cap].slice(-6);
+        });
+      }
+    };
+    rec.onerror = () => {};
+    rec.onend = () => {
+      if (recRef.current) {
+        try {
+          rec.start();
+        } catch {}
+      }
+    };
+    try {
+      rec.start();
+      recRef.current = rec;
+    } catch {}
+  }
+
+  function stop() {
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec?.stop) {
+      try {
+        rec.stop();
+      } catch {}
+    }
+  }
+
+  function toggle() {
+    if (enabled) {
+      stop();
+      setEnabled(false);
+    } else {
+      start();
+      setEnabled(true);
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={toggle}
+        disabled={!supported}
+        className={
+          "fixed bottom-20 right-36 z-40 w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md border border-white/15 shadow-soft transition disabled:opacity-30 " +
+          (enabled
+            ? "bg-brand-grad text-white"
+            : "bg-white/10 hover:bg-white/20 text-white")
+        }
+        title={
+          !supported
+            ? "Captions not supported (try Chrome)"
+            : enabled
+            ? "Stop captions"
+            : "Turn on captions"
+        }
+        aria-label="Captions"
+      >
+        <Captions className="w-5 h-5" />
+      </button>
+
+      {captions.length > 0 && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-36 z-30 max-w-[90vw] pointer-events-none flex flex-col items-center gap-1 px-4">
+          {captions.slice(-3).map((c, i) => (
+            <div
+              key={`${c.identity}-${c.ts}-${i}`}
+              className={
+                "bg-black/70 text-white text-sm sm:text-base rounded-xl px-3 py-1.5 backdrop-blur-md max-w-2xl text-center " +
+                (c.final ? "" : "opacity-80 italic")
+              }
+            >
+              <span className="text-brand-300 font-medium mr-2">{c.name}:</span>
+              {c.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
 
