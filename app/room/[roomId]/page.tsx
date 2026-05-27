@@ -8,6 +8,7 @@ import {
   PreJoin,
   LocalUserChoices,
   formatChatMessageLinks,
+  useParticipants,
 } from "@livekit/components-react";
 import {
   VideoPresets,
@@ -143,6 +144,7 @@ export default function RoomPage() {
           onDisconnected={() => router.push("/")}
         >
           <VideoConference chatMessageFormatter={formatChatMessageLinks} />
+          <AvatarStyler />
         </LiveKitRoom>
       </div>
     );
@@ -211,4 +213,113 @@ export default function RoomPage() {
       </div>
     </div>
   );
+}
+
+/* ---------- Per-participant unique avatar color + initial ---------- */
+
+const AVATAR_PALETTES = [
+  ["#f43f5e", "#ec4899"], // rose
+  ["#f59e0b", "#f97316"], // amber
+  ["#10b981", "#0d9488"], // emerald
+  ["#3b82f6", "#6366f1"], // blue-indigo
+  ["#7c4dff", "#5a25d8"], // purple
+  ["#ec4899", "#a855f7"], // pink-violet
+  ["#06b6d4", "#0ea5e9"], // cyan-sky
+  ["#84cc16", "#22c55e"], // lime-green
+];
+
+function paletteForName(name: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = (h * 31 + name.charCodeAt(i)) % AVATAR_PALETTES.length;
+  }
+  return AVATAR_PALETTES[h] as [string, string];
+}
+
+function cleanName(raw: string): string {
+  // Token identity-nya format "Bintang-abc123" → potong suffix random
+  const dash = raw.lastIndexOf("-");
+  if (dash > 0 && /^[a-z0-9]{4,8}$/i.test(raw.slice(dash + 1))) {
+    return raw.slice(0, dash);
+  }
+  return raw;
+}
+
+function AvatarStyler() {
+  const participants = useParticipants();
+
+  useEffect(() => {
+    // Build lookup: identity → {display, gradient}
+    const lookup = new Map<string, { display: string; grad: string }>();
+    participants.forEach((p) => {
+      const display = cleanName(p.name || p.identity);
+      const [c1, c2] = paletteForName(display);
+      const grad = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
+      lookup.set(p.identity, { display, grad });
+    });
+
+    const apply = () => {
+      document.querySelectorAll<HTMLElement>("[data-lk-participant-tile]").forEach((tile) => {
+        // Try several places LiveKit may put identity
+        const identity =
+          tile.getAttribute("data-lk-participant-identity") ||
+          tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
+            "data-lk-participant-identity"
+          ) ||
+          "";
+        const info =
+          lookup.get(identity) ||
+          // fallback: try matching by name text in the tile
+          (() => {
+            const txt =
+              tile.querySelector(".lk-participant-name")?.textContent ?? "";
+            for (const [, v] of lookup) {
+              if (v.display === txt) return v;
+            }
+            return undefined;
+          })();
+
+        const placeholder = tile.querySelector<HTMLElement>(
+          ".lk-participant-placeholder"
+        );
+        if (!placeholder || !info) return;
+
+        placeholder.style.background = info.grad;
+        placeholder.style.display = "flex";
+        placeholder.style.alignItems = "center";
+        placeholder.style.justifyContent = "center";
+
+        // Hide default SVG icon
+        const svg = placeholder.querySelector<SVGElement>("svg");
+        if (svg) svg.style.display = "none";
+
+        // Inject initial text
+        let initialEl = placeholder.querySelector<HTMLElement>(
+          ".pulse-initial"
+        );
+        if (!initialEl) {
+          initialEl = document.createElement("div");
+          initialEl.className = "pulse-initial";
+          initialEl.style.cssText =
+            "color: white; font-size: clamp(28px, 6vw, 64px); font-weight: 600; letter-spacing: -1px;";
+          placeholder.appendChild(initialEl);
+        }
+        initialEl.textContent = info.display.trim()[0]?.toUpperCase() ?? "?";
+      });
+    };
+
+    apply();
+    // Re-apply when LiveKit re-renders tiles (participants joining/leaving/cam toggling)
+    const observer = new MutationObserver(() => apply());
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-lk-participant-identity", "class"],
+    });
+
+    return () => observer.disconnect();
+  }, [participants]);
+
+  return null;
 }
