@@ -961,62 +961,6 @@ function InCallView({
 
   return (
     <div className="relative h-screen w-screen" data-lk-theme="default">
-      {/* === TOP BAR === */}
-      <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-4 py-1.5 text-white">
-        <span className="w-7 h-7 rounded-md bg-brand-grad flex items-center justify-center">
-          <svg width="14" height="14" viewBox="0 0 64 64" fill="none">
-            <path
-              d="M12 32 L22 32 L26 22 L34 44 L40 28 L46 36 L52 32"
-              stroke="white"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-        <span className="text-sm font-semibold">Pulse</span>
-        <span className="text-white/40">·</span>
-        <span className="text-xs text-white/70 font-mono">{roomId}</span>
-      </div>
-
-      {/* Top center: timer + host menu */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5">
-        <MeetingTimer />
-        {isHost && (
-          <>
-            <span className="w-px h-4 bg-white/15" />
-            <HostMenu token={token} room={roomId} router={router} />
-          </>
-        )}
-      </div>
-
-      {/* Top right: people + copy invite */}
-      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
-        <button
-          onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
-        >
-          <Users className="w-3.5 h-3.5" />
-          People
-        </button>
-        <button
-          onClick={copyLink}
-          className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-300" />
-              Copied
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              Invite
-            </>
-          )}
-        </button>
-      </div>
-
       <LiveKitRoom
         token={token}
         serverUrl={wsUrl}
@@ -1026,6 +970,60 @@ function InCallView({
         options={ROOM_OPTIONS}
         onDisconnected={() => router.push("/")}
       >
+        {/* === TOP BAR (inside LiveKitRoom so its children can use LK hooks) === */}
+        <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-4 py-1.5 text-white">
+          <span className="w-7 h-7 rounded-md bg-brand-grad flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 64 64" fill="none">
+              <path
+                d="M12 32 L22 32 L26 22 L34 44 L40 28 L46 36 L52 32"
+                stroke="white"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span className="text-sm font-semibold">Pulse</span>
+          <span className="text-white/40">·</span>
+          <span className="text-xs text-white/70 font-mono">{roomId}</span>
+        </div>
+
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5">
+          <MeetingTimer />
+          {isHost && (
+            <>
+              <span className="w-px h-4 bg-white/15" />
+              <HostMenu token={token} room={roomId} router={router} />
+            </>
+          )}
+        </div>
+
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+          <button
+            onClick={() => setPanelOpen(true)}
+            className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
+          >
+            <Users className="w-3.5 h-3.5" />
+            People
+          </button>
+          <button
+            onClick={copyLink}
+            className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-300" />
+                Copied
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                Invite
+              </>
+            )}
+          </button>
+        </div>
+
         <VideoConference chatMessageFormatter={formatChatMessageLinks} />
         <AvatarStyler />
         <InCallControls
