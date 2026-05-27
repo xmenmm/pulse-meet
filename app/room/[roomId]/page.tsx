@@ -9,6 +9,7 @@ import {
   LocalUserChoices,
   formatChatMessageLinks,
   useParticipants,
+  useLocalParticipant,
 } from "@livekit/components-react";
 import {
   VideoPresets,
@@ -46,13 +47,43 @@ export default function RoomPage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [savedName, setSavedName] = useState("");
+  const [liveName, setLiveName] = useState("");
+  const [colorIdx, setColorIdx] = useState<number | null>(null); // null = auto
 
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
 
   useEffect(() => {
     const n = localStorage.getItem("pulse-name");
-    if (n) setSavedName(n);
+    if (n) {
+      setSavedName(n);
+      setLiveName(n);
+    }
+    const c = localStorage.getItem("pulse-avatar-color");
+    if (c !== null) {
+      const idx = parseInt(c, 10);
+      setColorIdx(isNaN(idx) ? null : idx);
+    }
   }, []);
+
+  // Watch PreJoin's name input so avatar updates as user types
+  useEffect(() => {
+    if (token) return; // not in lobby anymore
+    const interval = setInterval(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        '.lk-prejoin input[type="text"]'
+      );
+      if (input && input.value !== liveName) {
+        setLiveName(input.value);
+      }
+    }, 300);
+    return () => clearInterval(interval);
+  }, [token, liveName]);
+
+  function pickColor(idx: number | null) {
+    setColorIdx(idx);
+    if (idx === null) localStorage.removeItem("pulse-avatar-color");
+    else localStorage.setItem("pulse-avatar-color", String(idx));
+  }
 
   async function joinRoom(c: LocalUserChoices) {
     try {
@@ -188,6 +219,13 @@ export default function RoomPage() {
           </h1>
         </div>
 
+        {/* Avatar preview + color picker */}
+        <LobbyAvatarCard
+          name={liveName || savedName}
+          colorIdx={colorIdx}
+          onPickColor={pickColor}
+        />
+
         <div className="bg-white rounded-3xl border border-line shadow-card p-6 w-full max-w-2xl">
           <PreJoin
             key={savedName}
@@ -213,6 +251,86 @@ export default function RoomPage() {
       </div>
     </div>
   );
+}
+
+/* ---------- Lobby avatar card with color picker ---------- */
+
+function LobbyAvatarCard({
+  name,
+  colorIdx,
+  onPickColor,
+}: {
+  name: string;
+  colorIdx: number | null;
+  onPickColor: (idx: number | null) => void;
+}) {
+  const cleaned = (name || "").trim();
+  const initial = cleaned ? cleaned[0].toUpperCase() : "?";
+
+  // Determine palette: manual override OR auto from name hash
+  const effectiveIdx =
+    colorIdx ?? hashIndex(cleaned || "guest", AVATAR_PALETTES.length);
+  const [c1, c2] = AVATAR_PALETTES[effectiveIdx];
+  const grad = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
+
+  return (
+    <div className="w-full max-w-2xl mb-4 bg-white rounded-3xl border border-line shadow-card p-5 flex items-center gap-5">
+      {/* Avatar */}
+      <div
+        className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-3xl font-semibold shrink-0 shadow-soft"
+        style={{ background: grad }}
+      >
+        {initial}
+      </div>
+
+      {/* Right side: label + colors */}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs uppercase tracking-wider text-muted font-medium">
+          Your avatar
+        </p>
+        <p className="mt-0.5 text-base font-semibold text-ink truncate">
+          {cleaned || "Set your name below"}
+        </p>
+
+        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+          {AVATAR_PALETTES.map((p, i) => {
+            const active = colorIdx === i;
+            return (
+              <button
+                key={i}
+                onClick={() => onPickColor(i)}
+                style={{ background: `linear-gradient(135deg, ${p[0]}, ${p[1]})` }}
+                className={
+                  "w-6 h-6 rounded-full transition-transform " +
+                  (active
+                    ? "ring-2 ring-ink ring-offset-2 scale-110"
+                    : "hover:scale-110")
+                }
+                aria-label={`Color ${i + 1}`}
+              />
+            );
+          })}
+          <button
+            onClick={() => onPickColor(null)}
+            className={
+              "ml-1 text-xs px-2.5 py-1 rounded-full transition " +
+              (colorIdx === null
+                ? "bg-ink text-white"
+                : "bg-panel text-muted hover:text-ink")
+            }
+          >
+            Auto
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function hashIndex(s: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % mod;
+  return h;
 }
 
 /* ---------- Per-participant unique avatar color + initial ---------- */
@@ -247,13 +365,31 @@ function cleanName(raw: string): string {
 
 function AvatarStyler() {
   const participants = useParticipants();
+  const { localParticipant } = useLocalParticipant();
 
   useEffect(() => {
+    // Local user's manual color override (only affects own avatar in own browser)
+    const colorOverride = localStorage.getItem("pulse-avatar-color");
+    const overrideIdx =
+      colorOverride !== null ? parseInt(colorOverride, 10) : null;
+    const localIdentity = localParticipant?.identity;
+
     // Build lookup: identity → {display, gradient}
     const lookup = new Map<string, { display: string; grad: string }>();
     participants.forEach((p) => {
       const display = cleanName(p.name || p.identity);
-      const [c1, c2] = paletteForName(display);
+      let palette: [string, string];
+      if (
+        p.identity === localIdentity &&
+        overrideIdx !== null &&
+        !isNaN(overrideIdx) &&
+        AVATAR_PALETTES[overrideIdx]
+      ) {
+        palette = AVATAR_PALETTES[overrideIdx] as [string, string];
+      } else {
+        palette = paletteForName(display);
+      }
+      const [c1, c2] = palette;
       const grad = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
       lookup.set(p.identity, { display, grad });
     });
@@ -319,7 +455,7 @@ function AvatarStyler() {
     });
 
     return () => observer.disconnect();
-  }, [participants]);
+  }, [participants, localParticipant]);
 
   return null;
 }
