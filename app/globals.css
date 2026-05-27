@@ -150,6 +150,64 @@ html, body {
   user-select: none;
 }
 
+/* ===== Per-tile toolbar (pin, kick) ===== */
+.pulse-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.lk-participant-tile:hover .pulse-toolbar,
+.lk-participant-tile[data-pulse-pinned="true"] .pulse-toolbar {
+  opacity: 1;
+}
+.pulse-tool-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pulse-tool-btn:hover { background: rgba(0, 0, 0, 0.8); }
+.pulse-tool-kick { background: rgba(244, 63, 94, 0.85); }
+.pulse-tool-kick:hover { background: #f43f5e; }
+
+/* ===== Pin focus layout ===== */
+body[data-pulse-pinned="true"] .lk-grid-layout {
+  display: grid !important;
+  grid-template-columns: 1fr 200px !important;
+  grid-template-rows: 1fr !important;
+  gap: 8px !important;
+  height: 100% !important;
+}
+body[data-pulse-pinned="true"] .lk-grid-layout > * {
+  align-self: stretch !important;
+}
+body[data-pulse-pinned="true"] .lk-grid-layout > .lk-participant-tile[data-pulse-pinned="true"] {
+  grid-column: 1 / 2 !important;
+  grid-row: 1 / 2 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+body[data-pulse-pinned="true"] .lk-grid-layout > .lk-participant-tile:not([data-pulse-pinned="true"]) {
+  grid-column: 2 / 3 !important;
+  width: 200px !important;
+  height: auto !important;
+  aspect-ratio: 16 / 10;
+}
+
 /* Bottom control bar — glassmorphism */
 [data-lk-theme="default"] .lk-control-bar {
   background: rgba(20, 20, 31, 0.85);

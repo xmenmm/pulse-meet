@@ -47,7 +47,7 @@ export default function Home() {
 
   function startMeeting() {
     const id = generateRoomId();
-    router.push(`/room/${id}`);
+    router.push(`/room/${id}?host=1`);
   }
 
   function joinMeeting() {

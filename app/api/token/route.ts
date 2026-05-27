@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const room = req.nextUrl.searchParams.get("room");
   const name = req.nextUrl.searchParams.get("name");
+  const isHost = req.nextUrl.searchParams.get("host") === "1";
 
   if (!room || !name) {
     return NextResponse.json(
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     identity: `${name}-${Math.random().toString(36).slice(2, 8)}`,
     name,
     ttl: "2h",
+    metadata: JSON.stringify({ role: isHost ? "host" : "guest" }),
   });
 
   at.addGrant({
@@ -37,8 +39,9 @@ export async function GET(req: NextRequest) {
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
+    roomAdmin: isHost,
   });
 
   const token = await at.toJwt();
-  return NextResponse.json({ token });
+  return NextResponse.json({ token, isHost });
 }

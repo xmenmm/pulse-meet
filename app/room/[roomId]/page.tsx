@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   LiveKitRoom,
@@ -35,7 +35,7 @@ const ROOM_OPTIONS: RoomOptions = {
     resolution: VideoPresets.h720.resolution,
   },
 };
-import { ArrowLeft, Copy, Check } from "lucide-react";
+import { ArrowLeft, Copy, Check, Camera, Trash2, Pin, UserX, Shield } from "lucide-react";
 
 export default function RoomPage() {
   const params = useParams<{ roomId: string }>();
@@ -48,7 +48,13 @@ export default function RoomPage() {
   const [copied, setCopied] = useState(false);
   const [savedName, setSavedName] = useState("");
   const [liveName, setLiveName] = useState("");
-  const [colorIdx, setColorIdx] = useState<number | null>(null); // null = auto
+  const [colorIdx, setColorIdx] = useState<number | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null);
+
+  // Host detection: URL ?host=1 (from "Start a meeting"); persisted in localStorage
+  const searchParams =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const isHost = searchParams?.get("host") === "1";
 
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
 
@@ -63,7 +69,20 @@ export default function RoomPage() {
       const idx = parseInt(c, 10);
       setColorIdx(isNaN(idx) ? null : idx);
     }
+    const p = localStorage.getItem("pulse-avatar-photo");
+    if (p) setPhoto(p);
   }, []);
+
+  async function uploadPhoto(file: File) {
+    const dataUrl = await resizeImageToDataURL(file, 256);
+    localStorage.setItem("pulse-avatar-photo", dataUrl);
+    setPhoto(dataUrl);
+  }
+
+  function removePhoto() {
+    localStorage.removeItem("pulse-avatar-photo");
+    setPhoto(null);
+  }
 
   // Watch PreJoin's name input so avatar updates as user types
   useEffect(() => {
@@ -90,7 +109,7 @@ export default function RoomPage() {
       const res = await fetch(
         `/api/token?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(
           c.username
-        )}`
+        )}${isHost ? "&host=1" : ""}`
       );
       if (!res.ok) throw new Error("Failed to get token");
       const data = await res.json();
@@ -176,6 +195,7 @@ export default function RoomPage() {
         >
           <VideoConference chatMessageFormatter={formatChatMessageLinks} />
           <AvatarStyler />
+          <InCallControls token={token} room={roomId} isHost={isHost} />
           <ReactionsLayer />
         </LiveKitRoom>
       </div>
@@ -220,11 +240,15 @@ export default function RoomPage() {
           </h1>
         </div>
 
-        {/* Avatar preview + color picker */}
+        {/* Avatar preview + color picker + photo upload */}
         <LobbyAvatarCard
           name={liveName || savedName}
           colorIdx={colorIdx}
           onPickColor={pickColor}
+          photo={photo}
+          onUploadPhoto={uploadPhoto}
+          onRemovePhoto={removePhoto}
+          isHost={isHost}
         />
 
         <div className="bg-white rounded-3xl border border-line shadow-card p-6 w-full max-w-2xl">
@@ -260,15 +284,23 @@ function LobbyAvatarCard({
   name,
   colorIdx,
   onPickColor,
+  photo,
+  onUploadPhoto,
+  onRemovePhoto,
+  isHost,
 }: {
   name: string;
   colorIdx: number | null;
   onPickColor: (idx: number | null) => void;
+  photo: string | null;
+  onUploadPhoto: (file: File) => void;
+  onRemovePhoto: () => void;
+  isHost: boolean;
 }) {
   const cleaned = (name || "").trim();
   const initial = cleaned ? cleaned[0].toUpperCase() : "?";
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Determine palette: manual override OR auto from name hash
   const effectiveIdx =
     colorIdx ?? hashIndex(cleaned || "guest", AVATAR_PALETTES.length);
   const [c1, c2] = AVATAR_PALETTES[effectiveIdx];
@@ -276,56 +308,145 @@ function LobbyAvatarCard({
 
   return (
     <div className="w-full max-w-2xl mb-4 bg-white rounded-3xl border border-line shadow-card p-5 flex items-center gap-5">
-      {/* Avatar */}
-      <div
-        className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-3xl font-semibold shrink-0 shadow-soft"
-        style={{ background: grad }}
-      >
-        {initial}
+      {/* Avatar with hover-to-upload */}
+      <div className="relative shrink-0 group">
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo}
+            alt="Avatar"
+            className="w-20 h-20 rounded-2xl object-cover shadow-soft"
+          />
+        ) : (
+          <div
+            className="w-20 h-20 rounded-2xl flex items-center justify-center text-white text-3xl font-semibold shadow-soft"
+            style={{ background: grad }}
+          >
+            {initial}
+          </div>
+        )}
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center"
+          aria-label="Upload photo"
+        >
+          <Camera className="w-6 h-6 text-white" />
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUploadPhoto(f);
+            e.target.value = "";
+          }}
+        />
       </div>
 
-      {/* Right side: label + colors */}
+      {/* Right side */}
       <div className="flex-1 min-w-0">
-        <p className="text-xs uppercase tracking-wider text-muted font-medium">
-          Your avatar
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs uppercase tracking-wider text-muted font-medium">
+            Your avatar
+          </p>
+          {isHost && (
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
+              <Shield className="w-3 h-3" />
+              Host
+            </span>
+          )}
+        </div>
         <p className="mt-0.5 text-base font-semibold text-ink truncate">
           {cleaned || "Set your name below"}
         </p>
 
-        <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-          {AVATAR_PALETTES.map((p, i) => {
-            const active = colorIdx === i;
-            return (
-              <button
-                key={i}
-                onClick={() => onPickColor(i)}
-                style={{ background: `linear-gradient(135deg, ${p[0]}, ${p[1]})` }}
-                className={
-                  "w-6 h-6 rounded-full transition-transform " +
-                  (active
-                    ? "ring-2 ring-ink ring-offset-2 scale-110"
-                    : "hover:scale-110")
-                }
-                aria-label={`Color ${i + 1}`}
-              />
-            );
-          })}
-          <button
-            onClick={() => onPickColor(null)}
-            className={
-              "ml-1 text-xs px-2.5 py-1 rounded-full transition " +
-              (colorIdx === null
-                ? "bg-ink text-white"
-                : "bg-panel text-muted hover:text-ink")
-            }
-          >
-            Auto
-          </button>
-        </div>
+        {/* Photo controls or color picker */}
+        {photo ? (
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="text-xs px-3 py-1.5 rounded-full bg-panel hover:bg-line text-ink transition flex items-center gap-1.5"
+            >
+              <Camera className="w-3 h-3" />
+              Change photo
+            </button>
+            <button
+              onClick={onRemovePhoto}
+              className="text-xs px-3 py-1.5 rounded-full text-rose-500 hover:bg-rose-50 transition flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3 h-3" />
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+            {AVATAR_PALETTES.map((p, i) => {
+              const active = colorIdx === i;
+              return (
+                <button
+                  key={i}
+                  onClick={() => onPickColor(i)}
+                  style={{
+                    background: `linear-gradient(135deg, ${p[0]}, ${p[1]})`,
+                  }}
+                  className={
+                    "w-6 h-6 rounded-full transition-transform " +
+                    (active
+                      ? "ring-2 ring-ink ring-offset-2 scale-110"
+                      : "hover:scale-110")
+                  }
+                  aria-label={`Color ${i + 1}`}
+                />
+              );
+            })}
+            <button
+              onClick={() => onPickColor(null)}
+              className={
+                "ml-1 text-xs px-2.5 py-1 rounded-full transition " +
+                (colorIdx === null
+                  ? "bg-ink text-white"
+                  : "bg-panel text-muted hover:text-ink")
+              }
+            >
+              Auto
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="ml-2 text-xs px-2.5 py-1 rounded-full bg-ink text-white hover:bg-brand-700 transition flex items-center gap-1.5"
+            >
+              <Camera className="w-3 h-3" />
+              Photo
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+// Resize uploaded image to a max dimension (keeps aspect ratio) and return data URL
+function resizeImageToDataURL(file: File, max: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth,
+        h = img.naturalHeight;
+      const scale = Math.min(1, max / Math.max(w, h));
+      const cw = Math.round(w * scale),
+        ch = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw;
+      canvas.height = ch;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("no canvas ctx"));
+      ctx.drawImage(img, 0, 0, cw, ch);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 function hashIndex(s: string, mod: number): number {
@@ -551,5 +672,208 @@ function ReactionsLayer() {
         </button>
       </div>
     </>
+  );
+}
+
+/* ---------- In-call controls: own photo + pin + kick ---------- */
+
+function InCallControls({
+  token,
+  room,
+  isHost,
+}: {
+  token: string;
+  room: string;
+  isHost: boolean;
+}) {
+  const { localParticipant } = useLocalParticipant();
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [kickBusy, setKickBusy] = useState<string | null>(null);
+
+  const localIdentity = localParticipant?.identity ?? "";
+
+  // Inject overlays (photo bg, pin/kick buttons) per tile
+  useEffect(() => {
+    const photo =
+      typeof window !== "undefined"
+        ? localStorage.getItem("pulse-avatar-photo")
+        : null;
+
+    const apply = () => {
+      document
+        .querySelectorAll<HTMLElement>(".lk-participant-tile")
+        .forEach((tile) => {
+          const isLocal =
+            tile.getAttribute("data-lk-local-participant") === "true" ||
+            tile.hasAttribute("data-lk-local-participant");
+
+          // Try to find identity (LiveKit puts it as data attribute somewhere)
+          const identity =
+            tile.getAttribute("data-lk-participant-identity") ||
+            tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
+              "data-lk-participant-identity"
+            ) ||
+            "";
+
+          // ---- Photo on own placeholder ----
+          if (isLocal && photo) {
+            const placeholder = tile.querySelector<HTMLElement>(
+              ".lk-participant-placeholder"
+            );
+            if (placeholder) {
+              placeholder.style.backgroundImage = `url(${photo})`;
+              placeholder.style.backgroundSize = "cover";
+              placeholder.style.backgroundPosition = "center";
+              const initialEl = placeholder.querySelector<HTMLElement>(
+                ".pulse-initial"
+              );
+              if (initialEl) initialEl.style.display = "none";
+            }
+          }
+
+          // ---- Pin/Kick toolbar (top-right of each tile) ----
+          let toolbar = tile.querySelector<HTMLElement>(".pulse-toolbar");
+          if (!toolbar) {
+            toolbar = document.createElement("div");
+            toolbar.className = "pulse-toolbar";
+            tile.style.position = tile.style.position || "relative";
+            tile.appendChild(toolbar);
+          }
+
+          // Tile-pinned marker
+          if (pinnedId && identity === pinnedId) {
+            tile.setAttribute("data-pulse-pinned", "true");
+          } else {
+            tile.removeAttribute("data-pulse-pinned");
+          }
+
+          // Update toolbar buttons
+          const pinned = pinnedId === identity;
+          toolbar.innerHTML = `
+            <button class="pulse-tool-btn" data-action="pin" title="${pinned ? "Unpin" : "Pin to top"}">
+              ${pinned ? "📌" : "📍"}
+            </button>
+            ${
+              isHost && !isLocal
+                ? `<button class="pulse-tool-btn pulse-tool-kick" data-action="kick" title="Kick from meeting">✖</button>`
+                : ""
+            }
+          `;
+
+          // Re-attach handlers
+          toolbar
+            .querySelectorAll<HTMLButtonElement>("button")
+            .forEach((btn) => {
+              btn.onclick = (e) => {
+                e.stopPropagation();
+                const action = btn.getAttribute("data-action");
+                if (action === "pin") {
+                  if (!identity) return;
+                  setPinnedId((prev) => (prev === identity ? null : identity));
+                } else if (action === "kick" && identity) {
+                  doKick(identity);
+                }
+              };
+            });
+        });
+    };
+
+    async function doKick(targetId: string) {
+      if (!confirm("Kick this participant from the meeting?")) return;
+      setKickBusy(targetId);
+      try {
+        const res = await fetch("/api/kick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            room,
+            target: targetId,
+            callerToken: token,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert("Failed to kick: " + (err.error || res.statusText));
+        }
+      } catch (e) {
+        alert("Network error: " + (e instanceof Error ? e.message : "unknown"));
+      } finally {
+        setKickBusy(null);
+      }
+    }
+
+    apply();
+    const id = window.setInterval(apply, 600);
+    return () => window.clearInterval(id);
+  }, [token, room, isHost, pinnedId, localIdentity]);
+
+  // Set pin state on body so CSS can target
+  useEffect(() => {
+    if (pinnedId) document.body.setAttribute("data-pulse-pinned", "true");
+    else document.body.removeAttribute("data-pulse-pinned");
+    return () => document.body.removeAttribute("data-pulse-pinned");
+  }, [pinnedId]);
+
+  return (
+    <>
+      {/* Unpin button shown when something is pinned */}
+      {pinnedId && (
+        <button
+          onClick={() => setPinnedId(null)}
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-white/10 backdrop-blur-md border border-white/15 text-white text-xs rounded-full px-3 py-1.5 hover:bg-white/20 transition flex items-center gap-2"
+        >
+          <Pin className="w-3 h-3" />
+          Unpin
+        </button>
+      )}
+      {/* Host-only "Kick all" button */}
+      {isHost && (
+        <KickAllButton token={token} room={room} busy={!!kickBusy} />
+      )}
+    </>
+  );
+}
+
+function KickAllButton({
+  token,
+  room,
+  busy,
+}: {
+  token: string;
+  room: string;
+  busy: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  async function kickAll() {
+    if (
+      !confirm(
+        "Remove EVERYONE except you from the meeting? This cannot be undone."
+      )
+    )
+      return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/kick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room, all: true, callerToken: token }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        alert("Failed: " + (e.error || res.statusText));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+  return (
+    <button
+      onClick={kickAll}
+      disabled={loading || busy}
+      className="fixed top-4 left-1/2 -translate-x-1/2 z-30 bg-rose-500/90 hover:bg-rose-500 disabled:opacity-50 text-white text-xs rounded-full px-3 py-1.5 backdrop-blur-md flex items-center gap-1.5 transition"
+    >
+      <UserX className="w-3 h-3" />
+      {loading ? "Removing..." : "Kick all (host)"}
+    </button>
   );
 }
