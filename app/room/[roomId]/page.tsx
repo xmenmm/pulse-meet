@@ -21,8 +21,14 @@ export default function RoomPage() {
   const [choices, setChoices] = useState<LocalUserChoices | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [savedName, setSavedName] = useState("");
 
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+
+  useEffect(() => {
+    const n = localStorage.getItem("pulse-name");
+    if (n) setSavedName(n);
+  }, []);
 
   async function joinRoom(c: LocalUserChoices) {
     try {
@@ -122,8 +128,18 @@ export default function RoomPage() {
 
         <div className="bg-white rounded-3xl border border-line shadow-card p-6 w-full max-w-2xl">
           <PreJoin
-            defaults={{ username: "", videoEnabled: true, audioEnabled: true }}
-            onSubmit={joinRoom}
+            key={savedName}
+            defaults={{
+              username: savedName,
+              videoEnabled: true,
+              audioEnabled: true,
+            }}
+            onSubmit={(c) => {
+              if (c.username && c.username !== savedName) {
+                localStorage.setItem("pulse-name", c.username);
+              }
+              joinRoom(c);
+            }}
             joinLabel="Join meeting"
           />
         </div>

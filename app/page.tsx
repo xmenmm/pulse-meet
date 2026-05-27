@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Video,
@@ -12,6 +12,9 @@ import {
   Globe,
   Bell,
   X,
+  User as UserIcon,
+  LogOut,
+  Pencil,
 } from "lucide-react";
 
 function generateRoomId() {
@@ -83,16 +86,11 @@ export default function Home() {
           <a className="hover:text-ink transition" href="#about">About</a>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
           <span className="hidden md:inline text-sm text-muted">
             {timeLabel}
           </span>
-          <button className="text-sm font-medium text-ink hover:text-brand-600 transition">
-            Sign in
-          </button>
-          <button className="bg-ink text-white text-sm font-medium px-4 py-2 rounded-full hover:bg-brand-700 transition">
-            Get Pulse
-          </button>
+          <ProfileAvatar />
         </div>
       </header>
 
@@ -227,6 +225,162 @@ export default function Home() {
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Profile Avatar ---------- */
+
+function avatarGradient(name: string) {
+  const palettes = [
+    "from-rose-400 to-fuchsia-500",
+    "from-amber-400 to-orange-500",
+    "from-emerald-400 to-teal-500",
+    "from-sky-400 to-indigo-500",
+    "from-violet-400 to-purple-600",
+    "from-pink-400 to-rose-500",
+  ];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % palettes.length;
+  return palettes[h];
+}
+
+function ProfileAvatar() {
+  const [name, setName] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const popRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("pulse-name");
+    if (saved) setName(saved);
+  }, []);
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setEditing(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  function save() {
+    const v = draft.trim();
+    if (v) {
+      localStorage.setItem("pulse-name", v);
+      setName(v);
+      setEditing(false);
+      setOpen(false);
+    }
+  }
+
+  function signOut() {
+    localStorage.removeItem("pulse-name");
+    setName(null);
+    setOpen(false);
+  }
+
+  const initial = name ? name.trim()[0].toUpperCase() : null;
+  const grad = name ? avatarGradient(name) : "from-brand-400 to-brand-700";
+
+  return (
+    <div className="relative" ref={popRef}>
+      <button
+        onClick={() => {
+          setOpen((o) => !o);
+          setDraft(name ?? "");
+          setEditing(!name);
+        }}
+        className={`w-10 h-10 rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white font-semibold ring-2 ring-white shadow-soft hover:shadow-card transition`}
+        aria-label="Profile"
+      >
+        {initial ?? <UserIcon className="w-5 h-5" />}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-3 w-72 bg-white border border-line rounded-2xl shadow-card p-5 z-40">
+          {/* Top: avatar large */}
+          <div className="flex flex-col items-center">
+            <div
+              className={`w-16 h-16 rounded-full bg-gradient-to-br ${grad} flex items-center justify-center text-white text-2xl font-semibold shadow-soft`}
+            >
+              {initial ?? <UserIcon className="w-7 h-7" />}
+            </div>
+
+            {!editing && name && (
+              <>
+                <p className="mt-3 text-base font-semibold text-ink">{name}</p>
+                <p className="text-xs text-muted">Signed in as guest</p>
+              </>
+            )}
+
+            {editing && (
+              <div className="mt-4 w-full">
+                <label className="text-xs text-muted block mb-1.5">
+                  Your name
+                </label>
+                <input
+                  autoFocus
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && save()}
+                  placeholder="e.g. Bintang"
+                  className="w-full border border-line rounded-xl px-3 py-2 text-sm outline-none focus:border-brand-400 transition"
+                />
+                <div className="mt-3 flex gap-2">
+                  {name && (
+                    <button
+                      onClick={() => setEditing(false)}
+                      className="flex-1 text-sm text-muted hover:text-ink py-2 rounded-full"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={save}
+                    disabled={!draft.trim()}
+                    className={
+                      "flex-1 text-sm font-medium py-2 rounded-full transition " +
+                      (draft.trim()
+                        ? "bg-brand-grad text-white"
+                        : "bg-line text-muted cursor-default")
+                    }
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          {!editing && name && (
+            <div className="mt-4 pt-4 border-t border-line space-y-1">
+              <button
+                onClick={() => {
+                  setDraft(name);
+                  setEditing(true);
+                }}
+                className="w-full flex items-center gap-3 text-sm text-ink hover:bg-panel rounded-xl px-3 py-2 transition"
+              >
+                <Pencil className="w-4 h-4 text-muted" />
+                Edit name
+              </button>
+              <button
+                onClick={signOut}
+                className="w-full flex items-center gap-3 text-sm text-rose-500 hover:bg-rose-50 rounded-xl px-3 py-2 transition"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
