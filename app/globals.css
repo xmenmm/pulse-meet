@@ -115,12 +115,13 @@ html, body {
     0 8px 32px -8px rgba(124, 77, 255, 0.5);
 }
 
-/* Avatar fallback (saat camera off) — base styling */
+/* Avatar fallback (saat camera off) — dark backdrop with small circular avatar in center
+   (Google Meet style: bg gelap + lingkaran kecil di tengah) */
 [data-lk-theme="default"] .lk-participant-placeholder {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: linear-gradient(135deg, #7c4dff 0%, #5a25d8 100%);
+  background: linear-gradient(135deg, #1f1f2e 0%, #14141f 100%) !important;
 }
 
 /* Hide default LiveKit person icon — we render our own initial */
@@ -129,26 +130,38 @@ html, body {
   display: none !important;
 }
 
-/* Per-tile gradient (8 variations, cycles by position) */
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+1) .lk-participant-placeholder { background: linear-gradient(135deg,#f43f5e 0%,#ec4899 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+2) .lk-participant-placeholder { background: linear-gradient(135deg,#f59e0b 0%,#f97316 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+3) .lk-participant-placeholder { background: linear-gradient(135deg,#10b981 0%,#0d9488 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+4) .lk-participant-placeholder { background: linear-gradient(135deg,#3b82f6 0%,#6366f1 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+5) .lk-participant-placeholder { background: linear-gradient(135deg,#7c4dff 0%,#5a25d8 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+6) .lk-participant-placeholder { background: linear-gradient(135deg,#ec4899 0%,#a855f7 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+7) .lk-participant-placeholder { background: linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%); }
-[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+8) .lk-participant-placeholder { background: linear-gradient(135deg,#84cc16 0%,#22c55e 100%); }
-
-/* Our custom initial text */
+/* Custom circular avatar in the center (small, like Google Meet) */
 .pulse-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(72px, 12vw, 144px);
+  height: clamp(72px, 12vw, 144px);
+  border-radius: 9999px;
+  background-size: cover;
+  background-position: center;
   color: white;
-  font-size: clamp(36px, 8vw, 96px);
+  font-size: clamp(28px, 4.5vw, 56px);
   font-weight: 600;
-  letter-spacing: -2px;
+  letter-spacing: -1px;
   line-height: 1;
-  text-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   user-select: none;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
 }
+
+/* Per-participant unique gradient on the inner circle (cycles 8 colors) */
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+1) .pulse-initial { background-color: #f43f5e; background-image: linear-gradient(135deg,#f43f5e 0%,#ec4899 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+2) .pulse-initial { background-color: #f59e0b; background-image: linear-gradient(135deg,#f59e0b 0%,#f97316 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+3) .pulse-initial { background-color: #10b981; background-image: linear-gradient(135deg,#10b981 0%,#0d9488 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+4) .pulse-initial { background-color: #3b82f6; background-image: linear-gradient(135deg,#3b82f6 0%,#6366f1 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+5) .pulse-initial { background-color: #7c4dff; background-image: linear-gradient(135deg,#7c4dff 0%,#5a25d8 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+6) .pulse-initial { background-color: #ec4899; background-image: linear-gradient(135deg,#ec4899 0%,#a855f7 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+7) .pulse-initial { background-color: #06b6d4; background-image: linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+8) .pulse-initial { background-color: #84cc16; background-image: linear-gradient(135deg,#84cc16 0%,#22c55e 100%); }
+
+/* When local user has a photo, .pulse-initial gets bg-image inline — hide letter */
+.pulse-initial.has-photo { color: transparent; }
 
 /* ===== Per-tile toolbar (pin, kick) ===== */
 .pulse-toolbar {

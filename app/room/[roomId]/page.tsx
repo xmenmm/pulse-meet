@@ -715,19 +715,12 @@ function InCallControls({
             ) ||
             "";
 
-          // ---- Photo on own placeholder ----
+          // ---- Photo on own small circular avatar ----
           if (isLocal && photo) {
-            const placeholder = tile.querySelector<HTMLElement>(
-              ".lk-participant-placeholder"
-            );
-            if (placeholder) {
-              placeholder.style.backgroundImage = `url(${photo})`;
-              placeholder.style.backgroundSize = "cover";
-              placeholder.style.backgroundPosition = "center";
-              const initialEl = placeholder.querySelector<HTMLElement>(
-                ".pulse-initial"
-              );
-              if (initialEl) initialEl.style.display = "none";
+            const initialEl = tile.querySelector<HTMLElement>(".pulse-initial");
+            if (initialEl) {
+              initialEl.style.backgroundImage = `url(${photo})`;
+              initialEl.classList.add("has-photo");
             }
           }
 
