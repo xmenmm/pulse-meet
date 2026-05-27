@@ -9,7 +9,30 @@ import {
   LocalUserChoices,
   formatChatMessageLinks,
 } from "@livekit/components-react";
+import {
+  VideoPresets,
+  RoomOptions,
+} from "livekit-client";
 import "@livekit/components-styles";
+
+// Optimisasi bandwidth untuk room rame (10-50 orang)
+const ROOM_OPTIONS: RoomOptions = {
+  adaptiveStream: true,       // auto turunin quality saat tile kecil
+  dynacast: true,             // server stop forward layer yg ga dilihat
+  publishDefaults: {
+    videoSimulcastLayers: [
+      VideoPresets.h180,      // 180p untuk gallery view (banyak orang)
+      VideoPresets.h360,      // 360p untuk middle
+      VideoPresets.h720,      // 720p untuk speaker view
+    ],
+    videoCodec: "vp9",
+    dtx: true,                // discontinuous transmission audio (hemat)
+    red: true,                // audio redundancy
+  },
+  videoCaptureDefaults: {
+    resolution: VideoPresets.h720.resolution,
+  },
+};
 import { ArrowLeft, Copy, Check } from "lucide-react";
 
 export default function RoomPage() {
@@ -80,6 +103,7 @@ export default function RoomPage() {
           connect={true}
           video={choices.videoEnabled}
           audio={choices.audioEnabled}
+          options={ROOM_OPTIONS}
           onDisconnected={() => router.push("/")}
         >
           <VideoConference chatMessageFormatter={formatChatMessageLinks} />
