@@ -53,10 +53,13 @@ export default function RoomPage() {
   const [colorIdx, setColorIdx] = useState<number | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
 
-  // Host detection: URL ?host=1 (from "Start a meeting"); persisted in localStorage
+  // Want-host: URL ?host=1 means user CLAIMS to be host. The server decides
+  // whether to grant it (only first creator gets it — see /api/token).
   const searchParams =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const isHost = searchParams?.get("host") === "1";
+  const wantsHost = searchParams?.get("host") === "1";
+  // Actual host status as confirmed by server in token response
+  const [isHost, setIsHost] = useState(false);
 
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
 
@@ -112,12 +115,15 @@ export default function RoomPage() {
       const res = await fetch(
         `/api/token?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(
           c.username
-        )}${isHost ? "&host=1" : ""}`
+        )}${wantsHost ? "&host=1" : ""}`
       );
       if (!res.ok) throw new Error("Failed to get token");
       const data = await res.json();
       setChoices(c);
       setToken(data.token);
+      // Server is the source of truth — it downgrades to guest if a host
+      // already exists in the room.
+      setIsHost(!!data.isHost);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     }
@@ -257,7 +263,7 @@ export default function RoomPage() {
           photo={photo}
           onUploadPhoto={uploadPhoto}
           onRemovePhoto={removePhoto}
-          isHost={isHost}
+          isHost={wantsHost}
         />
 
         <div className="bg-white rounded-3xl border border-line shadow-card p-6 w-full max-w-2xl">
