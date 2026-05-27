@@ -96,7 +96,43 @@ export default function RoomPage() {
   // --------- IN-CALL ---------
   if (token && choices && wsUrl) {
     return (
-      <div className="h-screen w-screen bg-ink" data-lk-theme="default">
+      <div className="relative h-screen w-screen" data-lk-theme="default">
+        {/* Branding overlay top-left */}
+        <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-4 py-1.5 text-white">
+          <span className="w-7 h-7 rounded-md bg-brand-grad flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 64 64" fill="none">
+              <path
+                d="M12 32 L22 32 L26 22 L34 44 L40 28 L46 36 L52 32"
+                stroke="white"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span className="text-sm font-semibold">Pulse</span>
+          <span className="text-white/40">·</span>
+          <span className="text-xs text-white/70 font-mono">{roomId}</span>
+        </div>
+
+        {/* Copy link overlay top-right */}
+        <button
+          onClick={copyLink}
+          className="absolute top-4 right-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-300" />
+              Link copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              Copy invite link
+            </>
+          )}
+        </button>
+
         <LiveKitRoom
           token={token}
           serverUrl={wsUrl}

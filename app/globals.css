@@ -19,3 +19,159 @@ html, body {
     radial-gradient(rgba(0,0,0,1) 1px, transparent 1px);
   background-size: 3px 3px;
 }
+
+/* ============================================================
+   PULSE THEME — override LiveKit Components default colors
+   ============================================================ */
+
+[data-lk-theme="default"] {
+  /* Background */
+  --lk-bg: #0a0a14;
+  --lk-bg2: #14141f;
+
+  /* Foreground / text */
+  --lk-fg: #ffffff;
+  --lk-fg2: rgba(255, 255, 255, 0.7);
+
+  /* Accent (Pulse purple) */
+  --lk-accent-bg: #7c4dff;
+  --lk-accent-fg: #ffffff;
+
+  /* Danger (leave button) */
+  --lk-danger: #f43f5e;
+  --lk-danger-bg: #f43f5e;
+  --lk-danger-text: #ffffff;
+
+  /* Success */
+  --lk-success: #10b981;
+
+  /* Controls (mic/cam buttons) */
+  --lk-control-bg: rgba(255, 255, 255, 0.08);
+  --lk-control-fg: #ffffff;
+  --lk-control-hover-bg: rgba(255, 255, 255, 0.18);
+  --lk-control-active-bg: rgba(124, 77, 255, 0.4);
+  --lk-control-active-hover-bg: rgba(124, 77, 255, 0.55);
+
+  /* Connection quality dots */
+  --lk-connection-excellent: #10b981;
+  --lk-connection-good: #fbbf24;
+  --lk-connection-poor: #f43f5e;
+
+  /* Borders & rounding (lebih modern) */
+  --lk-border-color: rgba(255, 255, 255, 0.08);
+  --lk-tile-border-radius: 1rem;
+  --lk-grid-gap: 0.6rem;
+
+  /* Background overall page */
+  background: radial-gradient(
+      1200px 800px at 70% -10%,
+      rgba(124, 77, 255, 0.18) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 600px at 0% 110%,
+      rgba(244, 63, 94, 0.12) 0%,
+      transparent 60%
+    ),
+    #0a0a14;
+}
+
+/* Tile peserta — sudut lebih bulat, ring accent saat speaking */
+[data-lk-theme="default"] .lk-participant-tile {
+  border-radius: var(--lk-tile-border-radius);
+  background: linear-gradient(180deg, #1a1a2e 0%, #14141f 100%);
+  border: 1px solid var(--lk-border-color);
+  overflow: hidden;
+  box-shadow: 0 8px 32px -16px rgba(0, 0, 0, 0.6);
+}
+
+[data-lk-theme="default"] .lk-participant-tile[data-lk-speaking="true"] {
+  border-color: var(--lk-accent-bg);
+  box-shadow: 0 0 0 2px var(--lk-accent-bg),
+    0 8px 32px -8px rgba(124, 77, 255, 0.5);
+}
+
+/* Avatar fallback (saat camera off) — gradient ungu */
+[data-lk-theme="default"] .lk-participant-placeholder {
+  background: linear-gradient(135deg, #7c4dff 0%, #5a25d8 60%, #3d1c8c 100%);
+}
+
+[data-lk-theme="default"] .lk-participant-placeholder svg {
+  width: 60px;
+  height: 60px;
+  opacity: 0.9;
+}
+
+/* Bottom control bar — glassmorphism */
+[data-lk-theme="default"] .lk-control-bar {
+  background: rgba(20, 20, 31, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--lk-border-color);
+  border-radius: 1.25rem;
+  padding: 0.5rem;
+  margin: 1rem;
+}
+
+/* Tombol kontrol (mic/cam/share) */
+[data-lk-theme="default"] .lk-button {
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+[data-lk-theme="default"] .lk-button:hover {
+  transform: translateY(-1px);
+}
+
+/* Tombol leave (Disconnect) */
+[data-lk-theme="default"] .lk-disconnect-button {
+  background: var(--lk-danger-bg);
+  border-radius: 9999px;
+  padding: 0.6rem 1.25rem;
+}
+
+/* Participant name label */
+[data-lk-theme="default"] .lk-participant-name,
+[data-lk-theme="default"] .lk-participant-metadata {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  border-radius: 9999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* Chat panel */
+[data-lk-theme="default"] .lk-chat {
+  background: rgba(20, 20, 31, 0.95);
+  backdrop-filter: blur(20px);
+  border-left: 1px solid var(--lk-border-color);
+}
+
+[data-lk-theme="default"] .lk-chat-entry {
+  border-radius: 0.75rem;
+}
+
+[data-lk-theme="default"] .lk-chat-form input {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: white;
+}
+
+/* PreJoin (lobby) — match brand */
+[data-lk-theme="default"] .lk-prejoin {
+  background: transparent;
+  color: #0f0f1a;
+}
+
+[data-lk-theme="default"] .lk-prejoin .lk-button {
+  background: linear-gradient(135deg, #7c4dff 0%, #5a25d8 100%);
+  color: white;
+  border-radius: 9999px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 500;
+}
+
+[data-lk-theme="default"] .lk-prejoin .lk-button:hover {
+  opacity: 0.95;
+}
