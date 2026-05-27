@@ -115,15 +115,39 @@ html, body {
     0 8px 32px -8px rgba(124, 77, 255, 0.5);
 }
 
-/* Avatar fallback (saat camera off) — gradient ungu */
+/* Avatar fallback (saat camera off) — base styling */
 [data-lk-theme="default"] .lk-participant-placeholder {
-  background: linear-gradient(135deg, #7c4dff 0%, #5a25d8 60%, #3d1c8c 100%);
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: linear-gradient(135deg, #7c4dff 0%, #5a25d8 100%);
 }
 
-[data-lk-theme="default"] .lk-participant-placeholder svg {
-  width: 60px;
-  height: 60px;
-  opacity: 0.9;
+/* Hide default LiveKit person icon — we render our own initial */
+[data-lk-theme="default"] .lk-participant-placeholder > svg,
+[data-lk-theme="default"] .lk-participant-placeholder > div:not(.pulse-initial) {
+  display: none !important;
+}
+
+/* Per-tile gradient (8 variations, cycles by position) */
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+1) .lk-participant-placeholder { background: linear-gradient(135deg,#f43f5e 0%,#ec4899 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+2) .lk-participant-placeholder { background: linear-gradient(135deg,#f59e0b 0%,#f97316 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+3) .lk-participant-placeholder { background: linear-gradient(135deg,#10b981 0%,#0d9488 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+4) .lk-participant-placeholder { background: linear-gradient(135deg,#3b82f6 0%,#6366f1 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+5) .lk-participant-placeholder { background: linear-gradient(135deg,#7c4dff 0%,#5a25d8 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+6) .lk-participant-placeholder { background: linear-gradient(135deg,#ec4899 0%,#a855f7 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+7) .lk-participant-placeholder { background: linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%); }
+[data-lk-theme="default"] .lk-grid-layout > *:nth-child(8n+8) .lk-participant-placeholder { background: linear-gradient(135deg,#84cc16 0%,#22c55e 100%); }
+
+/* Our custom initial text */
+.pulse-initial {
+  color: white;
+  font-size: clamp(36px, 8vw, 96px);
+  font-weight: 600;
+  letter-spacing: -2px;
+  line-height: 1;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.2);
+  user-select: none;
 }
 
 /* Bottom control bar — glassmorphism */

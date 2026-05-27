@@ -8,7 +8,6 @@ import {
   PreJoin,
   LocalUserChoices,
   formatChatMessageLinks,
-  useParticipants,
   useLocalParticipant,
   useDataChannel,
 } from "@livekit/components-react";
@@ -366,111 +365,61 @@ function cleanName(raw: string): string {
 }
 
 function AvatarStyler() {
-  const participants = useParticipants();
-  const { localParticipant } = useLocalParticipant();
-
+  // Just runs a polling loop that injects the initial letter into each
+  // placeholder. Background color comes from CSS nth-child rules in globals.css.
   useEffect(() => {
-    // Local user's manual color override (only affects own avatar in own browser)
-    const colorOverride = localStorage.getItem("pulse-avatar-color");
-    const overrideIdx =
-      colorOverride !== null ? parseInt(colorOverride, 10) : null;
-    const localIdentity = localParticipant?.identity;
-
-    // Build lookup: identity → {display, gradient}
-    const lookup = new Map<string, { display: string; grad: string }>();
-    participants.forEach((p) => {
-      const display = cleanName(p.name || p.identity);
-      let palette: [string, string];
-      if (
-        p.identity === localIdentity &&
-        overrideIdx !== null &&
-        !isNaN(overrideIdx) &&
-        AVATAR_PALETTES[overrideIdx]
-      ) {
-        palette = AVATAR_PALETTES[overrideIdx] as [string, string];
-      } else {
-        palette = paletteForName(display);
-      }
-      const [c1, c2] = palette;
-      const grad = `linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`;
-      lookup.set(p.identity, { display, grad });
-    });
-
     const apply = () => {
       document
-        .querySelectorAll<HTMLElement>(".lk-participant-tile, [data-lk-participant-tile]")
-        .forEach((tile) => {
-          // Try several places LiveKit may put identity
-          const identity =
-            tile.getAttribute("data-lk-participant-identity") ||
-            tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
-              "data-lk-participant-identity"
-            ) ||
-            tile.getAttribute("data-lk-participant-id") ||
-            "";
-          const nameText =
-            tile.querySelector(".lk-participant-name")?.textContent?.trim() ?? "";
-          const info =
-            lookup.get(identity) ||
-            // fallback: match by name text
-            (() => {
-              for (const [, v] of lookup) {
-                if (v.display === nameText) return v;
-              }
-              return undefined;
-            })() ||
-            // last fallback: derive from name shown in tile
-            (nameText
-              ? (() => {
-                  const palette = paletteForName(nameText);
-                  return {
-                    display: nameText,
-                    grad: `linear-gradient(135deg, ${palette[0]} 0%, ${palette[1]} 100%)`,
-                  };
-                })()
-              : undefined);
+        .querySelectorAll<HTMLElement>(".lk-participant-placeholder")
+        .forEach((placeholder) => {
+          // Find the parent tile to extract participant name
+          const tile = placeholder.closest<HTMLElement>(
+            ".lk-participant-tile, [class*='lk-participant']"
+          );
+          if (!tile) return;
 
-        const placeholder = tile.querySelector<HTMLElement>(
-          ".lk-participant-placeholder"
-        );
-        if (!placeholder || !info) return;
+          // Try several name text locations
+          let nameText = "";
+          for (const sel of [
+            ".lk-participant-name",
+            "[class*='participant-name']",
+            ".lk-participant-metadata",
+          ]) {
+            const el = tile.querySelector(sel);
+            const t = el?.textContent?.trim();
+            if (t) {
+              nameText = t;
+              break;
+            }
+          }
 
-        placeholder.style.background = info.grad;
-        placeholder.style.display = "flex";
-        placeholder.style.alignItems = "center";
-        placeholder.style.justifyContent = "center";
+          // The label sometimes contains mic icon + name. Take last word/non-space.
+          const cleaned = cleanName(nameText)
+            .replace(/^\s+|\s+$/g, "")
+            .replace(/^[^\w\d]+/, ""); // strip leading icons/symbols
+          const initial =
+            cleaned.length > 0 ? cleaned[0].toUpperCase() : "?";
 
-        // Hide default SVG icon
-        const svg = placeholder.querySelector<SVGElement>("svg");
-        if (svg) svg.style.display = "none";
-
-        // Inject initial text
-        let initialEl = placeholder.querySelector<HTMLElement>(
-          ".pulse-initial"
-        );
-        if (!initialEl) {
-          initialEl = document.createElement("div");
-          initialEl.className = "pulse-initial";
-          initialEl.style.cssText =
-            "color: white; font-size: clamp(28px, 6vw, 64px); font-weight: 600; letter-spacing: -1px;";
-          placeholder.appendChild(initialEl);
-        }
-        initialEl.textContent = info.display.trim()[0]?.toUpperCase() ?? "?";
-      });
+          // Inject or update initial element
+          let initialEl = placeholder.querySelector<HTMLElement>(
+            ".pulse-initial"
+          );
+          if (!initialEl) {
+            initialEl = document.createElement("div");
+            initialEl.className = "pulse-initial";
+            placeholder.appendChild(initialEl);
+          }
+          if (initialEl.textContent !== initial) {
+            initialEl.textContent = initial;
+          }
+        });
     };
 
+    // Apply immediately + poll every 600ms (catches all re-renders reliably)
     apply();
-    // Re-apply when LiveKit re-renders tiles (participants joining/leaving/cam toggling)
-    const observer = new MutationObserver(() => apply());
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-lk-participant-identity", "class"],
-    });
-
-    return () => observer.disconnect();
-  }, [participants, localParticipant]);
+    const id = window.setInterval(apply, 600);
+    return () => window.clearInterval(id);
+  }, []);
 
   return null;
 }
