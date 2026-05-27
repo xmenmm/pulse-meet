@@ -37,7 +37,24 @@ const ROOM_OPTIONS: RoomOptions = {
     resolution: VideoPresets.h720.resolution,
   },
 };
-import { ArrowLeft, Copy, Check, Camera, Trash2, Pin, UserX, Shield } from "lucide-react";
+import {
+  ArrowLeft,
+  Copy,
+  Check,
+  Camera,
+  Trash2,
+  Pin,
+  UserX,
+  Hand,
+  Users,
+  Lock,
+  Unlock,
+  MicOff,
+  PhoneOff,
+  MoreVertical,
+  Shield,
+  Clock,
+} from "lucide-react";
 
 export default function RoomPage() {
   const params = useParams<{ roomId: string }>();
@@ -156,58 +173,16 @@ export default function RoomPage() {
   // --------- IN-CALL ---------
   if (token && choices && wsUrl) {
     return (
-      <div className="relative h-screen w-screen" data-lk-theme="default">
-        {/* Branding overlay top-left */}
-        <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-4 py-1.5 text-white">
-          <span className="w-7 h-7 rounded-md bg-brand-grad flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 64 64" fill="none">
-              <path
-                d="M12 32 L22 32 L26 22 L34 44 L40 28 L46 36 L52 32"
-                stroke="white"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          <span className="text-sm font-semibold">Pulse</span>
-          <span className="text-white/40">·</span>
-          <span className="text-xs text-white/70 font-mono">{roomId}</span>
-        </div>
-
-        {/* Copy link overlay top-right */}
-        <button
-          onClick={copyLink}
-          className="absolute top-4 right-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-300" />
-              Link copied
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              Copy invite link
-            </>
-          )}
-        </button>
-
-        <LiveKitRoom
-          token={token}
-          serverUrl={wsUrl}
-          connect={true}
-          video={choices.videoEnabled}
-          audio={choices.audioEnabled}
-          options={ROOM_OPTIONS}
-          onDisconnected={() => router.push("/")}
-        >
-          <VideoConference chatMessageFormatter={formatChatMessageLinks} />
-          <AvatarStyler />
-          <InCallControls token={token} room={roomId} isHost={isHost} />
-          <ReactionsLayer />
-        </LiveKitRoom>
-      </div>
+      <InCallView
+        token={token}
+        choices={choices}
+        wsUrl={wsUrl}
+        roomId={roomId}
+        isHost={isHost}
+        copyLink={copyLink}
+        copied={copied}
+        router={router}
+      />
     );
   }
 
@@ -682,10 +657,12 @@ function InCallControls({
   token,
   room,
   isHost,
+  onRemotePhotosChange,
 }: {
   token: string;
   room: string;
   isHost: boolean;
+  onRemotePhotosChange?: (m: Map<string, string>) => void;
 }) {
   const { localParticipant } = useLocalParticipant();
   const participants = useParticipants();
@@ -740,6 +717,11 @@ function InCallControls({
       }
     } catch {}
   }, [message]);
+
+  // Bubble remote photos up to parent (for participants panel)
+  useEffect(() => {
+    onRemotePhotosChange?.(remotePhotos);
+  }, [remotePhotos, onRemotePhotosChange]);
 
   // Inject overlays (photo, pin/kick buttons) per tile
   useEffect(() => {
@@ -934,10 +916,544 @@ function KickAllButton({
     <button
       onClick={kickAll}
       disabled={loading || busy}
-      className="fixed top-4 left-1/2 -translate-x-1/2 z-30 bg-rose-500/90 hover:bg-rose-500 disabled:opacity-50 text-white text-xs rounded-full px-3 py-1.5 backdrop-blur-md flex items-center gap-1.5 transition"
+      className="hidden bg-rose-500/90 hover:bg-rose-500 disabled:opacity-50 text-white text-xs rounded-full px-3 py-1.5 backdrop-blur-md flex items-center gap-1.5 transition"
     >
       <UserX className="w-3 h-3" />
       {loading ? "Removing..." : "Kick all (host)"}
     </button>
   );
 }
+
+/* ---------- Full in-call view (lifted out so we can use LiveKit hooks at top level) ---------- */
+
+function InCallView({
+  token,
+  choices,
+  wsUrl,
+  roomId,
+  isHost,
+  copyLink,
+  copied,
+  router,
+}: {
+  token: string;
+  choices: LocalUserChoices;
+  wsUrl: string;
+  roomId: string;
+  isHost: boolean;
+  copyLink: () => void;
+  copied: boolean;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [remotePhotos, setRemotePhotos] = useState<Map<string, string>>(
+    new Map()
+  );
+
+  const myPhoto =
+    typeof window !== "undefined"
+      ? localStorage.getItem("pulse-avatar-photo")
+      : null;
+
+  return (
+    <div className="relative h-screen w-screen" data-lk-theme="default">
+      {/* === TOP BAR === */}
+      <div className="absolute top-4 left-4 z-30 flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-4 py-1.5 text-white">
+        <span className="w-7 h-7 rounded-md bg-brand-grad flex items-center justify-center">
+          <svg width="14" height="14" viewBox="0 0 64 64" fill="none">
+            <path
+              d="M12 32 L22 32 L26 22 L34 44 L40 28 L46 36 L52 32"
+              stroke="white"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <span className="text-sm font-semibold">Pulse</span>
+        <span className="text-white/40">·</span>
+        <span className="text-xs text-white/70 font-mono">{roomId}</span>
+      </div>
+
+      {/* Top center: timer + host menu */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-4 py-1.5">
+        <MeetingTimer />
+        {isHost && (
+          <>
+            <span className="w-px h-4 bg-white/15" />
+            <HostMenu token={token} room={roomId} router={router} />
+          </>
+        )}
+      </div>
+
+      {/* Top right: people + copy invite */}
+      <div className="absolute top-4 right-4 z-30 flex items-center gap-2">
+        <button
+          onClick={() => setPanelOpen(true)}
+          className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
+        >
+          <Users className="w-3.5 h-3.5" />
+          People
+        </button>
+        <button
+          onClick={copyLink}
+          className="flex items-center gap-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full px-3 py-1.5 text-white text-xs hover:bg-white/20 transition"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-300" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              Invite
+            </>
+          )}
+        </button>
+      </div>
+
+      <LiveKitRoom
+        token={token}
+        serverUrl={wsUrl}
+        connect={true}
+        video={choices.videoEnabled}
+        audio={choices.audioEnabled}
+        options={ROOM_OPTIONS}
+        onDisconnected={() => router.push("/")}
+      >
+        <VideoConference chatMessageFormatter={formatChatMessageLinks} />
+        <AvatarStyler />
+        <InCallControls
+          token={token}
+          room={roomId}
+          isHost={isHost}
+          onRemotePhotosChange={setRemotePhotos}
+        />
+        <ReactionsLayer />
+        <HandRaiseSystem setRaisedHands={setRaisedHands} />
+        <HandRaiseOverlay raisedHands={raisedHands} />
+        <ForceMuteListener />
+        <ParticipantsPanel
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          isHost={isHost}
+          token={token}
+          room={roomId}
+          raisedHands={raisedHands}
+          remotePhotos={remotePhotos}
+          myPhoto={myPhoto}
+        />
+      </LiveKitRoom>
+    </div>
+  );
+}
+
+/* ---------- Hand raise (data channel broadcast) ---------- */
+
+function HandRaiseSystem({
+  setRaisedHands,
+}: {
+  setRaisedHands: React.Dispatch<React.SetStateAction<Set<string>>>;
+}) {
+  const { localParticipant } = useLocalParticipant();
+  const [raised, setRaised] = useState(false);
+  const { send, message } = useDataChannel("pulse-hand");
+
+  // Send my hand state when toggled
+  useEffect(() => {
+    if (!localParticipant) return;
+    try {
+      const payload = new TextEncoder().encode(
+        JSON.stringify({ raised, identity: localParticipant.identity })
+      );
+      send(payload, { reliable: true });
+    } catch {}
+    // Also update local set
+    setRaisedHands((prev) => {
+      const next = new Set(prev);
+      if (raised) next.add(localParticipant.identity);
+      else next.delete(localParticipant.identity);
+      return next;
+    });
+  }, [raised, localParticipant, send, setRaisedHands]);
+
+  // Re-broadcast my hand state when new participants join (so they see)
+  // (Handled implicitly by participants list watcher in InCallControls)
+
+  // Receive others
+  useEffect(() => {
+    if (!message) return;
+    try {
+      const text = new TextDecoder().decode(message.payload);
+      const data = JSON.parse(text);
+      const id = data.identity || message.from?.identity;
+      if (!id) return;
+      setRaisedHands((prev) => {
+        const next = new Set(prev);
+        if (data.raised) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    } catch {}
+  }, [message, setRaisedHands]);
+
+  return (
+    <button
+      onClick={() => setRaised((r) => !r)}
+      className={
+        "fixed bottom-20 right-6 z-40 w-11 h-11 rounded-full flex items-center justify-center text-xl backdrop-blur-md border border-white/15 transition shadow-soft " +
+        (raised
+          ? "bg-amber-400 text-ink"
+          : "bg-white/10 hover:bg-white/20 text-white")
+      }
+      aria-label="Raise hand"
+      title={raised ? "Lower hand" : "Raise hand"}
+    >
+      <Hand className="w-5 h-5" />
+    </button>
+  );
+}
+
+/* ---------- Meeting timer ---------- */
+
+function MeetingTimer() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      setSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const fmt = (n: number) => n.toString().padStart(2, "0");
+  return (
+    <div className="flex items-center gap-1.5 text-white/80 text-xs font-mono">
+      <Clock className="w-3.5 h-3.5" />
+      {h > 0 ? `${h}:${fmt(m)}:${fmt(s)}` : `${m}:${fmt(s)}`}
+    </div>
+  );
+}
+
+/* ---------- Participants panel (slide-out from right) ---------- */
+
+function ParticipantsPanel({
+  open,
+  onClose,
+  isHost,
+  token,
+  room,
+  raisedHands,
+  remotePhotos,
+  myPhoto,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isHost: boolean;
+  token: string;
+  room: string;
+  raisedHands: Set<string>;
+  remotePhotos: Map<string, string>;
+  myPhoto: string | null;
+}) {
+  const participants = useParticipants();
+  const { localParticipant } = useLocalParticipant();
+  const localId = localParticipant?.identity ?? "";
+
+  async function kick(identity: string) {
+    if (!confirm("Kick this participant?")) return;
+    await fetch("/api/kick", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room, target: identity, callerToken: token }),
+    });
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed top-0 right-0 h-full w-80 bg-[#14141f]/95 backdrop-blur-xl border-l border-white/10 z-40 flex flex-col">
+      <div className="px-4 py-4 border-b border-white/10 flex items-center justify-between">
+        <h3 className="text-white font-semibold text-sm flex items-center gap-2">
+          <Users className="w-4 h-4" />
+          People ({participants.length})
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-white/60 hover:text-white text-xl leading-none"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-2">
+        {(participants as Participant[]).map((p) => {
+          const cn = cleanName(p.name || p.identity);
+          const isLocal = p.identity === localId;
+          const isPHost = (() => {
+            try {
+              return JSON.parse(p.metadata || "{}").role === "host";
+            } catch {
+              return false;
+            }
+          })();
+          const handUp = raisedHands.has(p.identity);
+          const photo = isLocal ? myPhoto : remotePhotos.get(p.identity);
+          return (
+            <div
+              key={p.identity}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-white/5"
+            >
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0 bg-gradient-to-br from-violet-400 to-purple-600 bg-cover bg-center"
+                style={photo ? { backgroundImage: `url(${photo})` } : undefined}
+              >
+                {!photo && (cn[0]?.toUpperCase() ?? "?")}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-white text-sm truncate">
+                    {cn} {isLocal && <span className="text-white/40">(you)</span>}
+                  </p>
+                  {isPHost && (
+                    <Shield className="w-3 h-3 text-brand-400" aria-label="Host" />
+                  )}
+                  {handUp && (
+                    <span className="text-amber-400 text-base">✋</span>
+                  )}
+                </div>
+                <p className="text-white/40 text-xs">
+                  {p.isMicrophoneEnabled ? "🎤 on" : "🔇 muted"}
+                </p>
+              </div>
+              {isHost && !isLocal && (
+                <button
+                  onClick={() => kick(p.identity)}
+                  className="text-rose-400 hover:text-rose-300 text-xs px-2 py-1 rounded hover:bg-rose-500/10"
+                  title="Remove from meeting"
+                >
+                  <UserX className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Host menu (top center) ---------- */
+
+function HostMenu({
+  token,
+  room,
+  router,
+}: {
+  token: string;
+  room: string;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const { send } = useDataChannel("pulse-force-mute");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  async function muteAll() {
+    if (!confirm("Mute everyone (except you)?")) return;
+    setLoading("mute");
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ action: "mute" }));
+      send(payload, { reliable: true });
+    } finally {
+      setLoading(null);
+      setOpen(false);
+    }
+  }
+
+  async function toggleLock() {
+    setLoading("lock");
+    try {
+      const res = await fetch("/api/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room, locked: !locked, callerToken: token }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLocked(!!data.locked);
+      }
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function endMeeting() {
+    if (!confirm("End meeting for EVERYONE? This kicks all participants.")) return;
+    setLoading("end");
+    try {
+      await fetch("/api/end-meeting", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room, callerToken: token }),
+      });
+      router.push("/");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 bg-brand-grad text-white text-xs font-medium rounded-full px-3 py-1.5 hover:opacity-90 transition"
+      >
+        <Shield className="w-3.5 h-3.5" />
+        Host
+        <MoreVertical className="w-3 h-3" />
+      </button>
+      {open && (
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 w-56 bg-[#14141f] border border-white/10 rounded-2xl shadow-card overflow-hidden">
+          <HostMenuItem
+            onClick={muteAll}
+            disabled={loading === "mute"}
+            icon={<MicOff className="w-4 h-4" />}
+            label="Mute everyone"
+          />
+          <HostMenuItem
+            onClick={toggleLock}
+            disabled={loading === "lock"}
+            icon={
+              locked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />
+            }
+            label={locked ? "Unlock meeting" : "Lock meeting"}
+          />
+          <div className="h-px bg-white/10" />
+          <HostMenuItem
+            onClick={endMeeting}
+            disabled={loading === "end"}
+            icon={<PhoneOff className="w-4 h-4" />}
+            label="End meeting for all"
+            danger
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HostMenuItem({
+  onClick,
+  disabled,
+  icon,
+  label,
+  danger,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "w-full flex items-center gap-3 px-4 py-2.5 text-sm transition disabled:opacity-50 " +
+        (danger
+          ? "text-rose-400 hover:bg-rose-500/10"
+          : "text-white hover:bg-white/5")
+      }
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+/* ---------- Force-mute receiver (any user listens, mutes their own mic) ---------- */
+
+function ForceMuteListener() {
+  const { localParticipant } = useLocalParticipant();
+  const { message } = useDataChannel("pulse-force-mute");
+  useEffect(() => {
+    if (!message || !localParticipant) return;
+    try {
+      const text = new TextDecoder().decode(message.payload);
+      const data = JSON.parse(text);
+      if (data?.action === "mute") {
+        // Self-mute (host can't remotely mute via SDK from browser; we ask politely)
+        localParticipant.setMicrophoneEnabled(false);
+      }
+    } catch {}
+  }, [message, localParticipant]);
+  return null;
+}
+
+/* ---------- Hand raise indicator overlay on tile ---------- */
+
+function HandRaiseOverlay({ raisedHands }: { raisedHands: Set<string> }) {
+  const participants = useParticipants();
+
+  useEffect(() => {
+    const nameToIdentity = new Map<string, string>();
+    (participants as Participant[]).forEach((p) => {
+      const cn = cleanName(p.name || p.identity).trim();
+      if (cn) nameToIdentity.set(cn, p.identity);
+    });
+
+    const apply = () => {
+      document
+        .querySelectorAll<HTMLElement>(".lk-participant-tile")
+        .forEach((tile) => {
+          const isLocal = tile.getAttribute("data-lk-local-participant") === "true";
+          let identity =
+            tile.getAttribute("data-lk-participant-identity") || "";
+          if (!identity) {
+            const nameText =
+              tile.querySelector(".lk-participant-name")?.textContent ?? "";
+            const cn = cleanName(nameText.trim()).replace(/^[^\w\d]+/, "").trim();
+            identity = nameToIdentity.get(cn) || "";
+          }
+          const isRaised = identity && raisedHands.has(identity);
+
+          let indicator = tile.querySelector<HTMLElement>(".pulse-hand-indicator");
+          if (isRaised) {
+            if (!indicator) {
+              indicator = document.createElement("div");
+              indicator.className = "pulse-hand-indicator";
+              indicator.textContent = "✋";
+              tile.appendChild(indicator);
+            }
+          } else if (indicator) {
+            indicator.remove();
+          }
+          // Avoid unused warn
+          void isLocal;
+        });
+    };
+    apply();
+    const id = window.setInterval(apply, 600);
+    return () => window.clearInterval(id);
+  }, [raisedHands, participants]);
+
+  return null;
+}
+

@@ -26,14 +26,46 @@ export async function GET(req: NextRequest) {
   }
 
   // === Host determined by server: FIRST joiner becomes host ===
-  // No URL flag involved. If room has no existing host, this person is host.
-  // If a host already exists, this person is a guest.
+  // Also check if room is locked (host explicitly locked it).
   let isHost = false;
   try {
     const httpHost = wsUrl
       .replace("wss://", "https://")
       .replace("ws://", "http://");
     const svc = new RoomServiceClient(httpHost, apiKey, apiSecret);
+
+    // Check lock state
+    try {
+      const rooms = await svc.listRooms([room]);
+      const r = rooms[0];
+      if (r?.metadata) {
+        const meta = JSON.parse(r.metadata);
+        if (meta.locked) {
+          // Check if this is the host trying to rejoin (allowed)
+          const participants = await svc.listParticipants(room);
+          const isExistingHost = participants.some(
+            (p) =>
+              p.name === name &&
+              (() => {
+                try {
+                  return JSON.parse(p.metadata || "{}").role === "host";
+                } catch {
+                  return false;
+                }
+              })()
+          );
+          if (!isExistingHost) {
+            return NextResponse.json(
+              { error: "This meeting is locked by the host" },
+              { status: 403 }
+            );
+          }
+        }
+      }
+    } catch {
+      // room doesn't exist or no metadata; continue
+    }
+
     const participants = await svc.listParticipants(room);
     const hasExistingHost = participants.some((p) => {
       try {
@@ -45,7 +77,6 @@ export async function GET(req: NextRequest) {
     });
     isHost = !hasExistingHost;
   } catch {
-    // Room doesn't exist yet → this is the first joiner → host
     isHost = true;
   }
 

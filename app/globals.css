@@ -163,6 +163,29 @@ html, body {
 /* When local user has a photo, .pulse-initial gets bg-image inline — hide letter */
 .pulse-initial.has-photo { color: transparent; }
 
+/* ===== Hand raise indicator (yellow waving hand top-left of tile) ===== */
+.pulse-hand-indicator {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: rgba(251, 191, 36, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  z-index: 4;
+  animation: pulse-wave 1.6s ease-in-out infinite;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(251, 191, 36, 0.4);
+}
+@keyframes pulse-wave {
+  0%, 100% { transform: rotate(-8deg) scale(1); }
+  50% { transform: rotate(8deg) scale(1.08); }
+}
+
 /* ===== Per-tile toolbar (pin, kick) ===== */
 .pulse-toolbar {
   position: absolute;
