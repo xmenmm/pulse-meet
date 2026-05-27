@@ -10,6 +10,7 @@ import {
   formatChatMessageLinks,
   useParticipants,
   useLocalParticipant,
+  useDataChannel,
 } from "@livekit/components-react";
 import {
   VideoPresets,
@@ -176,6 +177,7 @@ export default function RoomPage() {
         >
           <VideoConference chatMessageFormatter={formatChatMessageLinks} />
           <AvatarStyler />
+          <ReactionsLayer />
         </LiveKitRoom>
       </div>
     );
@@ -395,25 +397,38 @@ function AvatarStyler() {
     });
 
     const apply = () => {
-      document.querySelectorAll<HTMLElement>("[data-lk-participant-tile]").forEach((tile) => {
-        // Try several places LiveKit may put identity
-        const identity =
-          tile.getAttribute("data-lk-participant-identity") ||
-          tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
-            "data-lk-participant-identity"
-          ) ||
-          "";
-        const info =
-          lookup.get(identity) ||
-          // fallback: try matching by name text in the tile
-          (() => {
-            const txt =
-              tile.querySelector(".lk-participant-name")?.textContent ?? "";
-            for (const [, v] of lookup) {
-              if (v.display === txt) return v;
-            }
-            return undefined;
-          })();
+      document
+        .querySelectorAll<HTMLElement>(".lk-participant-tile, [data-lk-participant-tile]")
+        .forEach((tile) => {
+          // Try several places LiveKit may put identity
+          const identity =
+            tile.getAttribute("data-lk-participant-identity") ||
+            tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
+              "data-lk-participant-identity"
+            ) ||
+            tile.getAttribute("data-lk-participant-id") ||
+            "";
+          const nameText =
+            tile.querySelector(".lk-participant-name")?.textContent?.trim() ?? "";
+          const info =
+            lookup.get(identity) ||
+            // fallback: match by name text
+            (() => {
+              for (const [, v] of lookup) {
+                if (v.display === nameText) return v;
+              }
+              return undefined;
+            })() ||
+            // last fallback: derive from name shown in tile
+            (nameText
+              ? (() => {
+                  const palette = paletteForName(nameText);
+                  return {
+                    display: nameText,
+                    grad: `linear-gradient(135deg, ${palette[0]} 0%, ${palette[1]} 100%)`,
+                  };
+                })()
+              : undefined);
 
         const placeholder = tile.querySelector<HTMLElement>(
           ".lk-participant-placeholder"
@@ -458,4 +473,134 @@ function AvatarStyler() {
   }, [participants, localParticipant]);
 
   return null;
+}
+
+/* ---------- Emoji Reactions ---------- */
+
+const EMOJIS = ["👍", "❤️", "😂", "🎉", "👏", "🔥", "😮", "🙌", "💯", "🤔"];
+
+type Floater = {
+  id: number;
+  emoji: string;
+  senderName: string;
+  x: number; // horizontal offset percentage
+  drift: number; // sideways drift
+  duration: number; // ms
+};
+
+function ReactionsLayer() {
+  const { localParticipant } = useLocalParticipant();
+  const [floats, setFloats] = useState<Floater[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  const { send, message } = useDataChannel("pulse-reactions");
+
+  // Receive incoming reactions
+  useEffect(() => {
+    if (!message) return;
+    try {
+      const text = new TextDecoder().decode(message.payload);
+      const data = JSON.parse(text);
+      const senderName =
+        cleanName(message.from?.name || message.from?.identity || "Someone");
+      addFloat(data.emoji, senderName);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [pickerOpen]);
+
+  function addFloat(emoji: string, senderName: string) {
+    const id = Date.now() + Math.random();
+    const x = 35 + Math.random() * 30; // 35-65% from left
+    const drift = (Math.random() - 0.5) * 60; // -30 to +30 px sideways
+    const duration = 2800 + Math.random() * 800;
+    setFloats((prev) => [...prev, { id, emoji, senderName, x, drift, duration }]);
+    window.setTimeout(() => {
+      setFloats((prev) => prev.filter((f) => f.id !== id));
+    }, duration);
+  }
+
+  function sendReaction(emoji: string) {
+    const myName = cleanName(
+      localParticipant?.name || localParticipant?.identity || "You"
+    );
+    addFloat(emoji, myName);
+    try {
+      const payload = new TextEncoder().encode(JSON.stringify({ emoji }));
+      send(payload, { reliable: true });
+    } catch (e) {
+      console.error("Failed to send reaction", e);
+    }
+    // keep picker open for multiple reactions
+  }
+
+  return (
+    <>
+      {/* Floating emoji layer (absolute, on top of everything in call) */}
+      <div className="pointer-events-none fixed inset-0 z-40 overflow-hidden">
+        {floats.map((f) => (
+          <div
+            key={f.id}
+            className="absolute bottom-24 flex flex-col items-center"
+            style={
+              {
+                left: `${f.x}%`,
+                animation: `pulse-float ${f.duration}ms ease-out forwards`,
+                "--drift": `${f.drift}px`,
+              } as React.CSSProperties
+            }
+          >
+            <span className="text-5xl drop-shadow-lg">{f.emoji}</span>
+            <span className="mt-1 text-xs text-white/90 bg-black/40 backdrop-blur-sm rounded-full px-2 py-0.5 whitespace-nowrap">
+              {f.senderName}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Picker button bottom-center */}
+      <div
+        ref={pickerRef}
+        className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center"
+      >
+        {pickerOpen && (
+          <div className="mb-2 bg-white/10 backdrop-blur-xl border border-white/15 rounded-2xl px-2 py-2 flex gap-1 shadow-card animate-[fadeUp_0.2s_ease-out]">
+            {EMOJIS.map((e) => (
+              <button
+                key={e}
+                onClick={() => sendReaction(e)}
+                className="text-2xl w-10 h-10 rounded-xl hover:bg-white/15 hover:scale-110 transition-transform"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => setPickerOpen((o) => !o)}
+          className={
+            "w-11 h-11 rounded-full flex items-center justify-center text-xl backdrop-blur-md border border-white/15 transition shadow-soft " +
+            (pickerOpen
+              ? "bg-brand-grad text-white"
+              : "bg-white/10 hover:bg-white/20 text-white")
+          }
+          aria-label="Send a reaction"
+        >
+          😊
+        </button>
+      </div>
+    </>
+  );
 }
