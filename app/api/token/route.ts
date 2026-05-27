@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const room = req.nextUrl.searchParams.get("room");
   const name = req.nextUrl.searchParams.get("name");
-  let isHost = req.nextUrl.searchParams.get("host") === "1";
 
   if (!room || !name) {
     return NextResponse.json(
@@ -26,30 +25,28 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // === Enforce single host per room ===
-  // If this request asks for host but a host already exists in the room,
-  // downgrade to guest. The original creator always wins.
-  if (isHost) {
-    try {
-      const httpHost = wsUrl
-        .replace("wss://", "https://")
-        .replace("ws://", "http://");
-      const svc = new RoomServiceClient(httpHost, apiKey, apiSecret);
-      const participants = await svc.listParticipants(room);
-      const hasExistingHost = participants.some((p) => {
-        try {
-          const meta = JSON.parse(p.metadata || "{}");
-          return meta.role === "host";
-        } catch {
-          return false;
-        }
-      });
-      if (hasExistingHost) {
-        isHost = false;
+  // === Host determined by server: FIRST joiner becomes host ===
+  // No URL flag involved. If room has no existing host, this person is host.
+  // If a host already exists, this person is a guest.
+  let isHost = false;
+  try {
+    const httpHost = wsUrl
+      .replace("wss://", "https://")
+      .replace("ws://", "http://");
+    const svc = new RoomServiceClient(httpHost, apiKey, apiSecret);
+    const participants = await svc.listParticipants(room);
+    const hasExistingHost = participants.some((p) => {
+      try {
+        const meta = JSON.parse(p.metadata || "{}");
+        return meta.role === "host";
+      } catch {
+        return false;
       }
-    } catch {
-      // Room doesn't exist yet (first joiner) → allow as host
-    }
+    });
+    isHost = !hasExistingHost;
+  } catch {
+    // Room doesn't exist yet → this is the first joiner → host
+    isHost = true;
   }
 
   const at = new AccessToken(apiKey, apiSecret, {

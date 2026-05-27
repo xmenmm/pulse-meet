@@ -53,12 +53,7 @@ export default function RoomPage() {
   const [colorIdx, setColorIdx] = useState<number | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
 
-  // Want-host: URL ?host=1 means user CLAIMS to be host. The server decides
-  // whether to grant it (only first creator gets it — see /api/token).
-  const searchParams =
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const wantsHost = searchParams?.get("host") === "1";
-  // Actual host status as confirmed by server in token response
+  // Server is the source of truth for host status (set after /api/token call)
   const [isHost, setIsHost] = useState(false);
 
   const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
@@ -115,14 +110,13 @@ export default function RoomPage() {
       const res = await fetch(
         `/api/token?room=${encodeURIComponent(roomId)}&name=${encodeURIComponent(
           c.username
-        )}${wantsHost ? "&host=1" : ""}`
+        )}`
       );
       if (!res.ok) throw new Error("Failed to get token");
       const data = await res.json();
       setChoices(c);
       setToken(data.token);
-      // Server is the source of truth — it downgrades to guest if a host
-      // already exists in the room.
+      // Server determines host: first joiner = host, rest = guest
       setIsHost(!!data.isHost);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -263,7 +257,6 @@ export default function RoomPage() {
           photo={photo}
           onUploadPhoto={uploadPhoto}
           onRemovePhoto={removePhoto}
-          isHost={wantsHost}
         />
 
         <div className="bg-white rounded-3xl border border-line shadow-card p-6 w-full max-w-2xl">
@@ -302,7 +295,6 @@ function LobbyAvatarCard({
   photo,
   onUploadPhoto,
   onRemovePhoto,
-  isHost,
 }: {
   name: string;
   colorIdx: number | null;
@@ -310,7 +302,6 @@ function LobbyAvatarCard({
   photo: string | null;
   onUploadPhoto: (file: File) => void;
   onRemovePhoto: () => void;
-  isHost: boolean;
 }) {
   const cleaned = (name || "").trim();
   const initial = cleaned ? cleaned[0].toUpperCase() : "?";
@@ -362,17 +353,9 @@ function LobbyAvatarCard({
 
       {/* Right side */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-xs uppercase tracking-wider text-muted font-medium">
-            Your avatar
-          </p>
-          {isHost && (
-            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-              <Shield className="w-3 h-3" />
-              Host
-            </span>
-          )}
-        </div>
+        <p className="text-xs uppercase tracking-wider text-muted font-medium">
+          Your avatar
+        </p>
         <p className="mt-0.5 text-base font-semibold text-ink truncate">
           {cleaned || "Set your name below"}
         </p>
