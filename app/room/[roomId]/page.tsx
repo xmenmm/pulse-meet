@@ -10,10 +10,12 @@ import {
   formatChatMessageLinks,
   useLocalParticipant,
   useDataChannel,
+  useParticipants,
 } from "@livekit/components-react";
 import {
   VideoPresets,
   RoomOptions,
+  Participant,
 } from "livekit-client";
 import "@livekit/components-styles";
 
@@ -74,7 +76,8 @@ export default function RoomPage() {
   }, []);
 
   async function uploadPhoto(file: File) {
-    const dataUrl = await resizeImageToDataURL(file, 256);
+    // 192px @ q=0.75 → ~4-8KB base64, fits easily in data channel
+    const dataUrl = await resizeImageToDataURL(file, 192);
     localStorage.setItem("pulse-avatar-photo", dataUrl);
     setPhoto(dataUrl);
   }
@@ -121,7 +124,13 @@ export default function RoomPage() {
   }
 
   function copyLink() {
-    navigator.clipboard.writeText(window.location.href);
+    // Strip ?host=1 so invited guests don't accidentally become host.
+    // Host status is only granted to the user who clicked "Start a meeting".
+    const cleanUrl =
+      typeof window !== "undefined"
+        ? window.location.origin + window.location.pathname
+        : "";
+    navigator.clipboard.writeText(cleanUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -442,7 +451,7 @@ function resizeImageToDataURL(file: File, max: number): Promise<string> {
       const ctx = canvas.getContext("2d");
       if (!ctx) return reject(new Error("no canvas ctx"));
       ctx.drawImage(img, 0, 0, cw, ch);
-      resolve(canvas.toDataURL("image/jpeg", 0.85));
+      resolve(canvas.toDataURL("image/jpeg", 0.75));
     };
     img.onerror = reject;
     img.src = URL.createObjectURL(file);
@@ -493,10 +502,13 @@ function AvatarStyler() {
       document
         .querySelectorAll<HTMLElement>(".lk-participant-placeholder")
         .forEach((placeholder) => {
-          // Find the parent tile to extract participant name
-          const tile = placeholder.closest<HTMLElement>(
-            ".lk-participant-tile, [class*='lk-participant']"
-          );
+          // Walk up to the participant tile (skip self — closest() includes self
+          // and placeholder's own class would match [class*='lk-participant'])
+          const tile =
+            placeholder.parentElement?.closest<HTMLElement>(
+              ".lk-participant-tile"
+            ) ||
+            placeholder.closest<HTMLElement>(".lk-participant-tile");
           if (!tile) return;
 
           // Try several name text locations
@@ -687,17 +699,72 @@ function InCallControls({
   isHost: boolean;
 }) {
   const { localParticipant } = useLocalParticipant();
+  const participants = useParticipants();
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [kickBusy, setKickBusy] = useState<string | null>(null);
+  // identity -> photo data URL (received via data channel)
+  const [remotePhotos, setRemotePhotos] = useState<Map<string, string>>(
+    new Map()
+  );
+  const prevCountRef = useRef(0);
+  const { send, message } = useDataChannel("pulse-photo");
 
   const localIdentity = localParticipant?.identity ?? "";
 
-  // Inject overlays (photo bg, pin/kick buttons) per tile
+  // Broadcast my photo when (a) I join, or (b) someone new joins
   useEffect(() => {
-    const photo =
+    const myPhoto =
       typeof window !== "undefined"
         ? localStorage.getItem("pulse-avatar-photo")
         : null;
+    const count = participants.length;
+    const isFirstSend = prevCountRef.current === 0 && count >= 1;
+    const someoneNewJoined = count > prevCountRef.current;
+    if (myPhoto && (isFirstSend || someoneNewJoined)) {
+      try {
+        const payload = new TextEncoder().encode(
+          JSON.stringify({ type: "photo", data: myPhoto })
+        );
+        send(payload, { reliable: true });
+      } catch (e) {
+        console.error("Photo broadcast failed", e);
+      }
+    }
+    prevCountRef.current = count;
+  }, [participants.length, send]);
+
+  // Receive photos from others
+  useEffect(() => {
+    if (!message) return;
+    try {
+      const text = new TextDecoder().decode(message.payload);
+      const data = JSON.parse(text);
+      if (data?.type === "photo" && data?.data && message.from?.identity) {
+        const fromId = message.from.identity;
+        const url = data.data as string;
+        setRemotePhotos((prev) => {
+          if (prev.get(fromId) === url) return prev;
+          const next = new Map(prev);
+          next.set(fromId, url);
+          return next;
+        });
+      }
+    } catch {}
+  }, [message]);
+
+  // Inject overlays (photo, pin/kick buttons) per tile
+  useEffect(() => {
+    const myPhoto =
+      typeof window !== "undefined"
+        ? localStorage.getItem("pulse-avatar-photo")
+        : null;
+
+    // Build name → identity lookup
+    const nameToIdentity = new Map<string, string>();
+    (participants as Participant[]).forEach((p) => {
+      const cn = cleanName(p.name || p.identity).trim();
+      if (cn) nameToIdentity.set(cn, p.identity);
+    });
 
     const apply = () => {
       document
@@ -707,24 +774,41 @@ function InCallControls({
             tile.getAttribute("data-lk-local-participant") === "true" ||
             tile.hasAttribute("data-lk-local-participant");
 
-          // Try to find identity (LiveKit puts it as data attribute somewhere)
-          const identity =
+          // Identity: try DOM attribute, fallback to name match
+          let identity =
             tile.getAttribute("data-lk-participant-identity") ||
             tile.querySelector("[data-lk-participant-identity]")?.getAttribute(
               "data-lk-participant-identity"
             ) ||
             "";
+          if (!identity) {
+            const nameText =
+              tile.querySelector(".lk-participant-name")?.textContent ?? "";
+            const cn = cleanName(nameText.trim())
+              .replace(/^[^\w\d]+/, "")
+              .trim();
+            identity = nameToIdentity.get(cn) || "";
+          }
+          if (!identity && isLocal && localIdentity) identity = localIdentity;
 
-          // ---- Photo on own small circular avatar ----
-          if (isLocal && photo) {
-            const initialEl = tile.querySelector<HTMLElement>(".pulse-initial");
-            if (initialEl) {
-              initialEl.style.backgroundImage = `url(${photo})`;
-              initialEl.classList.add("has-photo");
+          // ---- Photo on inner circle ----
+          const initialEl = tile.querySelector<HTMLElement>(".pulse-initial");
+          if (initialEl) {
+            const photoUrl =
+              isLocal && myPhoto
+                ? myPhoto
+                : identity
+                ? remotePhotos.get(identity)
+                : undefined;
+            if (photoUrl) {
+              if (initialEl.style.backgroundImage !== `url("${photoUrl}")`) {
+                initialEl.style.backgroundImage = `url(${photoUrl})`;
+                initialEl.classList.add("has-photo");
+              }
             }
           }
 
-          // ---- Pin/Kick toolbar (top-right of each tile) ----
+          // ---- Pin/Kick toolbar ----
           let toolbar = tile.querySelector<HTMLElement>(".pulse-toolbar");
           if (!toolbar) {
             toolbar = document.createElement("div");
@@ -733,14 +817,13 @@ function InCallControls({
             tile.appendChild(toolbar);
           }
 
-          // Tile-pinned marker
+          // Pinned marker
           if (pinnedId && identity === pinnedId) {
             tile.setAttribute("data-pulse-pinned", "true");
           } else {
             tile.removeAttribute("data-pulse-pinned");
           }
 
-          // Update toolbar buttons
           const pinned = pinnedId === identity;
           toolbar.innerHTML = `
             <button class="pulse-tool-btn" data-action="pin" title="${pinned ? "Unpin" : "Pin to top"}">
@@ -753,7 +836,6 @@ function InCallControls({
             }
           `;
 
-          // Re-attach handlers
           toolbar
             .querySelectorAll<HTMLButtonElement>("button")
             .forEach((btn) => {
