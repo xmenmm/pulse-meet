@@ -163,10 +163,18 @@ html, body {
 /* When local user has a photo, .pulse-initial gets bg-image inline — hide letter */
 .pulse-initial.has-photo { color: transparent; }
 
-/* ===== Hand raise indicator (yellow waving hand top-left of tile) ===== */
+/* When People panel is open, push floating action buttons left so they're visible */
+body[data-pulse-panel="open"] [aria-label="Raise hand"],
+body[data-pulse-panel="open"] [aria-label="Background blur"],
+body[data-pulse-panel="open"] [aria-label="Captions"],
+body[data-pulse-panel="open"] [aria-label="Send a reaction"] {
+  transform: translateX(-320px);
+}
+
+/* ===== Hand raise indicator (yellow waving hand bottom-left of tile, near name) ===== */
 .pulse-hand-indicator {
   position: absolute;
-  top: 12px;
+  bottom: 48px;
   left: 12px;
   width: 36px;
   height: 36px;

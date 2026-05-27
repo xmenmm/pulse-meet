@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
     canPublish: true,
     canSubscribe: true,
     canPublishData: true,
+    canUpdateOwnMetadata: true,
     roomAdmin: isHost,
   });
 

@@ -1038,6 +1038,7 @@ function InCallView({
         <ForceMuteListener />
         <BackgroundBlurButton />
         <LiveCaptions />
+        <PanelOpenBodyAttr open={panelOpen} />
         <ParticipantsPanel
           open={panelOpen}
           onClose={() => setPanelOpen(false)}
@@ -1053,7 +1054,7 @@ function InCallView({
   );
 }
 
-/* ---------- Hand raise (data channel broadcast) ---------- */
+/* ---------- Hand raise (LiveKit participant attributes — auto-syncs) ---------- */
 
 function HandRaiseSystem({
   setRaisedHands,
@@ -1061,46 +1062,29 @@ function HandRaiseSystem({
   setRaisedHands: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
   const { localParticipant } = useLocalParticipant();
+  const participants = useParticipants();
   const [raised, setRaised] = useState(false);
-  const { send, message } = useDataChannel("pulse-hand");
 
-  // Send my hand state when toggled
+  // Sync my raised state to LK attributes — propagates to all participants
   useEffect(() => {
     if (!localParticipant) return;
     try {
-      const payload = new TextEncoder().encode(
-        JSON.stringify({ raised, identity: localParticipant.identity })
-      );
-      send(payload, { reliable: true });
-    } catch {}
-    // Also update local set
-    setRaisedHands((prev) => {
-      const next = new Set(prev);
-      if (raised) next.add(localParticipant.identity);
-      else next.delete(localParticipant.identity);
-      return next;
-    });
-  }, [raised, localParticipant, send, setRaisedHands]);
-
-  // Re-broadcast my hand state when new participants join (so they see)
-  // (Handled implicitly by participants list watcher in InCallControls)
-
-  // Receive others
-  useEffect(() => {
-    if (!message) return;
-    try {
-      const text = new TextDecoder().decode(message.payload);
-      const data = JSON.parse(text);
-      const id = data.identity || message.from?.identity;
-      if (!id) return;
-      setRaisedHands((prev) => {
-        const next = new Set(prev);
-        if (data.raised) next.add(id);
-        else next.delete(id);
-        return next;
+      localParticipant.setAttributes({
+        hand: raised ? "raised" : "",
       });
-    } catch {}
-  }, [message, setRaisedHands]);
+    } catch (e) {
+      console.error("Failed to set hand attribute", e);
+    }
+  }, [raised, localParticipant]);
+
+  // Watch all participants' hand attribute → build raisedHands set
+  useEffect(() => {
+    const next = new Set<string>();
+    (participants as Participant[]).forEach((p) => {
+      if (p.attributes?.hand === "raised") next.add(p.identity);
+    });
+    setRaisedHands(next);
+  }, [participants, setRaisedHands]);
 
   return (
     <button
@@ -1407,6 +1391,16 @@ function ForceMuteListener() {
       }
     } catch {}
   }, [message, localParticipant]);
+  return null;
+}
+
+/* ---------- Body attr setter for panel open state (CSS hook) ---------- */
+function PanelOpenBodyAttr({ open }: { open: boolean }) {
+  useEffect(() => {
+    if (open) document.body.setAttribute("data-pulse-panel", "open");
+    else document.body.removeAttribute("data-pulse-panel");
+    return () => document.body.removeAttribute("data-pulse-panel");
+  }, [open]);
   return null;
 }
 
